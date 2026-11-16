@@ -51,6 +51,7 @@ public class MainActivity extends Activity {
     private static final String KEY_ALIAS = "HexSecGPT.ApiKey.AES";
     private static final String PREFS = "hexsec_secure_settings";
     private static final String PREF_API = "openrouter_key";
+    private static final String PREF_GITHUB = "github_build_token";
     private static final String API_URL = "https://openrouter.ai/api/v1/chat/completions";
     private static final String MODEL = "openrouter/free";
     private static final String SYSTEM_PROMPT =
@@ -66,6 +67,9 @@ public class MainActivity extends Activity {
     private final List<JSONObject> history = new ArrayList<>();
     private volatile boolean busy = false;
     private String pendingProjectExport = null;
+    private File pendingApkSaveFile = null;
+    private String pendingApkProject = null;
+    private String pendingApkRunUrl = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -206,6 +210,126 @@ public class MainActivity extends Activity {
         return message == null ? e.getClass().getSimpleName() : message;
     }
 
+
+    private String storedGitHubToken() {
+        try {
+            String packed = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_GITHUB, null);
+            if (packed == null) return null;
+            String[] parts = packed.split("\\\\.", 2);
+            if (parts.length != 2) return null;
+            byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
+            byte[] ciphertext = Base64.decode(parts[1], Base64.NO_WRAP);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), new GCMParameterSpec(128, iv));
+            return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
+        } catch (Exception e) { return null; }
+    }
+
+    private void saveGitHubToken(String value) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey());
+        byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
+        String packed = Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP) + "." +
+                Base64.encodeToString(encrypted, Base64.NO_WRAP);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_GITHUB, packed).apply();
+    }
+
+    private void showGitHubTokenDialog() {
+        runOnUiThread(() -> {
+            EditText input = new EditText(this);
+            input.setSingleLine(true);
+            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            input.setHint("github_pat_…");
+            new AlertDialog.Builder(this)
+                .setTitle("Token GitHub — BuildServer")
+                .setMessage("Token fine-grained limitato al solo repository codexgigas79/HexSecGPT-BuildServer. Permessi: Contents Read and write; Actions Read-only. Il token viene cifrato con Android Keystore e non viene inviato all'AI.")
+                .setView(input)
+                .setNegativeButton("Annulla", (d, w) -> js("onRemoteBuildStatus", "Configurazione annullata", ""))
+                .setNeutralButton("Rimuovi", (d, w) -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(PREF_GITHUB).apply();
+                    js("onRemoteBuildStatus", "Token GitHub rimosso dal dispositivo.", "");
+                })
+                .setPositiveButton("Salva", (d, w) -> {
+                    String value = input.getText().toString().trim();
+                    if (value.length() < 20 || !(value.startsWith("github_pat_") || value.startsWith("ghp_"))) {
+                        js("onRemoteBuildStatus", "", "Token non riconosciuto. Inserisca un token GitHub fine-grained valido.");
+                        return;
+                    }
+                    try {
+                        saveGitHubToken(value);
+                        js("onRemoteBuildStatus", "Token GitHub salvato in modo cifrato sul dispositivo. Ora può avviare la compilazione.", "");
+                    } catch (Exception e) {
+                        js("onRemoteBuildStatus", "", "Impossibile proteggere il token: " + safeMessage(e));
+                    }
+                }).show();
+        });
+    }
+
+    private void startRemoteBuild(String projectName) {
+        final String name = projectName == null ? "" : projectName.trim();
+        if (!name.matches("[a-z0-9_-]{2,32}")) {
+            js("onRemoteBuildStatus", "", "Selezioni prima un progetto Android valido.");
+            return;
+        }
+        final String token = storedGitHubToken();
+        if (token == null || token.trim().isEmpty()) {
+            js("onRemoteBuildStatus", "Configuri il token GitHub e prema nuovamente COMPILA APK.", "");
+            showGitHubTokenDialog();
+            return;
+        }
+        if (busy) {
+            js("onRemoteBuildStatus", "", "Attendere il completamento dell'operazione corrente.");
+            return;
+        }
+        busy = true;
+        js("onRemoteBuildStatus", "Invio del progetto al BuildServer...", "");
+        executor.execute(() -> {
+            try {
+                js("onRemoteBuildStatus", "GitHub Actions: compilazione in corso. Attendere; non chiudere l'app.", "");
+                RemoteBuildManager.Result result = RemoteBuildManager.build(MainActivity.this, name, token);
+                pendingApkSaveFile = result.apk;
+                pendingApkProject = name;
+                pendingApkRunUrl = result.runUrl;
+                js("onRemoteBuildReady", name, result.runUrl, result.artifactName);
+                requestApkSave();
+            } catch (Exception e) {
+                js("onRemoteBuildFinished", name, "", safeMessage(e));
+            } finally {
+                busy = false;
+            }
+        });
+    }
+
+    private void requestApkSave() {
+        runOnUiThread(() -> {
+            if (pendingApkSaveFile == null || !pendingApkSaveFile.isFile()) {
+                js("onRemoteBuildFinished", pendingApkProject == null ? "" : pendingApkProject,
+                        pendingApkRunUrl == null ? "" : pendingApkRunUrl, "APK non disponibile nella memoria temporanea.");
+                return;
+            }
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/vnd.android.package-archive");
+            intent.putExtra(Intent.EXTRA_TITLE, pendingApkProject + ".apk");
+            try { startActivityForResult(intent, 7032); }
+            catch (Exception e) {
+                js("onRemoteBuildSaveCancelled", "APK compilato; impossibile aprire il selettore di salvataggio: " + safeMessage(e));
+            }
+        });
+    }
+
+    private void copyBuiltApk(Uri destination) throws Exception {
+        if (pendingApkSaveFile == null || !pendingApkSaveFile.isFile())
+            throw new IllegalStateException("APK temporaneo non trovato.");
+        try (InputStream in = new FileInputStream(pendingApkSaveFile);
+             OutputStream out = getContentResolver().openOutputStream(destination)) {
+            if (out == null) throw new IllegalStateException("Impossibile scrivere nella destinazione scelta.");
+            byte[] buffer = new byte[8192]; int count;
+            while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+            out.flush();
+        }
+    }
+
     private String requestCompletion(JSONArray messages) throws Exception {
         String key = storedKey();
         if (key == null || key.trim().isEmpty()) throw new IllegalStateException("Configura prima la chiave API OpenRouter.");
@@ -274,6 +398,18 @@ public class MainActivity extends Activity {
     private class AndroidBridge {
         @JavascriptInterface
         public void openApiKeyDialog() { showKeyDialog(); }
+
+        @JavascriptInterface
+        public void openGitHubTokenDialog() { showGitHubTokenDialog(); }
+
+        @JavascriptInterface
+        public String getGitHubStatus() { return storedGitHubToken() == null ? "TOKEN NON CONFIGURATO" : "TOKEN CONFIGURATO"; }
+
+        @JavascriptInterface
+        public void compileAndroidProject(String name) { startRemoteBuild(name); }
+
+        @JavascriptInterface
+        public void saveBuiltApk() { requestApkSave(); }
 
         @JavascriptInterface
         public String getStatus() {
@@ -515,6 +651,25 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == 7032) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                final Uri destination = data.getData();
+                executor.execute(() -> {
+                    try {
+                        copyBuiltApk(destination);
+                        js("onRemoteBuildFinished", pendingApkProject == null ? "" : pendingApkProject,
+                                pendingApkRunUrl == null ? "" : pendingApkRunUrl, "");
+                    } catch (Exception e) {
+                        js("onRemoteBuildFinished", pendingApkProject == null ? "" : pendingApkProject,
+                                pendingApkRunUrl == null ? "" : pendingApkRunUrl, safeMessage(e));
+                    }
+                });
+            } else {
+                js("onRemoteBuildSaveCancelled", "Salvataggio annullato. L'APK compilato resta temporaneamente disponibile: prema SALVA APK per riprovare.");
+            }
+            return;
+        }
         if (requestCode == 7031) {
             final String project = pendingProjectExport;
             pendingProjectExport = null;
