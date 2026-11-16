@@ -121,7 +121,8 @@ final class AppStudio {
     private static boolean safeSourcePath(String path) {
         if (path.contains("..") || path.startsWith("/") || path.contains("\\\\") || path.contains(":")) return false;
         if (!path.matches("app/src/main/java/com/generated/app/[A-Za-z0-9_]+\\.java") &&
-            !path.matches("app/src/main/res/layout/[a-z0-9_]+\\.xml")) return false;
+            !path.matches("app/src/main/res/layout/[a-z0-9_]+\\.xml") &&
+            !path.matches("app/src/main/res/values/[a-z0-9_]+\\.xml")) return false;
         return true;
     }
 
