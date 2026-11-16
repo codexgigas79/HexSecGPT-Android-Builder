@@ -322,13 +322,34 @@ public class MainActivity extends Activity {
     private void copyBuiltApk(Uri destination) throws Exception {
         if (pendingApkSaveFile == null || !pendingApkSaveFile.isFile())
             throw new IllegalStateException("APK temporaneo non trovato.");
+        final long expected = pendingApkSaveFile.length();
+        if (expected < 10000L)
+            throw new IllegalStateException("APK temporaneo vuoto o incompleto (" + expected + " byte). Download GitHub da ripetere.");
+
+        long copied = 0L;
         try (InputStream in = new FileInputStream(pendingApkSaveFile);
-             OutputStream out = getContentResolver().openOutputStream(destination)) {
+             OutputStream out = getContentResolver().openOutputStream(destination, "w")) {
             if (out == null) throw new IllegalStateException("Impossibile scrivere nella destinazione scelta.");
-            byte[] buffer = new byte[8192]; int count;
-            while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = in.read(buffer)) != -1) {
+                out.write(buffer, 0, count);
+                copied += count;
+            }
             out.flush();
         }
+        if (copied != expected)
+            throw new IllegalStateException("Salvataggio incompleto: copiati " + copied + " byte su " + expected + ". Scelga nuovamente la destinazione.");
+
+        long verified = 0L;
+        try (InputStream check = getContentResolver().openInputStream(destination)) {
+            if (check == null) throw new IllegalStateException("Il file salvato non è leggibile per la verifica.");
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = check.read(buffer)) != -1) verified += count;
+        }
+        if (verified != expected)
+            throw new IllegalStateException("Verifica fallita: il file salvato contiene " + verified + " byte, attesi " + expected + ". L'APK non è stato salvato correttamente.");
     }
 
     private String selectedModel() {
