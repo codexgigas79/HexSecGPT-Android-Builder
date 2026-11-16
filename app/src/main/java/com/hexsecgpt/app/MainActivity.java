@@ -53,7 +53,8 @@ public class MainActivity extends Activity {
     private static final String PREF_API = "openrouter_key";
     private static final String PREF_GITHUB = "github_build_token";
     private static final String API_URL = "https://openrouter.ai/api/v1/chat/completions";
-    private static final String MODEL = "openrouter/free";
+    private static final String DEFAULT_MODEL = "openrouter/free";
+    private static final String PREF_MODEL = "openrouter_model";
     private static final String SYSTEM_PROMPT =
         "Sei HexSecGPT, assistente tecnico specializzato in cybersecurity difensiva, " +
         "Linux, Android, Termux, Python, reti, OSINT pubblico e programmazione. " +
@@ -330,38 +331,80 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String selectedModel() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_MODEL, DEFAULT_MODEL);
+    }
+
+    private JSONArray fetchFreeModels() throws Exception {
+        String key = storedKey();
+        if (key == null || key.trim().isEmpty()) throw new IllegalStateException("Configura prima la chiave API OpenRouter.");
+        HttpURLConnection c = (HttpURLConnection) new URL("https://openrouter.ai/api/v1/models").openConnection();
+        try {
+            c.setRequestMethod("GET");
+            c.setConnectTimeout(20000);
+            c.setReadTimeout(30000);
+            c.setRequestProperty("Authorization", "Bearer " + key);
+            int status = c.getResponseCode();
+            String body = readAll(status >= 200 && status < 300 ? c.getInputStream() : c.getErrorStream());
+            if (status < 200 || status >= 300) throw new IllegalStateException("Catalogo OpenRouter non disponibile (HTTP " + status + ").");
+            JSONArray data = new JSONObject(body).optJSONArray("data");
+            JSONArray free = new JSONArray();
+            if (data != null) for (int i = 0; i < data.length(); i++) {
+                JSONObject model = data.optJSONObject(i);
+                JSONObject pricing = model == null ? null : model.optJSONObject("pricing");
+                if (pricing == null) continue;
+                double p = parsePrice(pricing.optString("prompt", "1"));
+                double q = parsePrice(pricing.optString("completion", "1"));
+                String id = model.optString("id", "");
+                if (p == 0d && q == 0d && !id.isEmpty()) {
+                    JSONObject item = new JSONObject();
+                    item.put("id", id);
+                    item.put("name", model.optString("name", id));
+                    free.put(item);
+                }
+            }
+            return free;
+        } finally { c.disconnect(); }
+    }
+
+    private double parsePrice(String value) {
+        try { return Double.parseDouble(value); } catch (Exception e) { return -1d; }
+    }
+
     // Retry controllato per interruzioni temporanee della rete/API durante le richieste AI.
     private String requestCompletion(JSONArray messages) throws Exception {
         Exception last = null;
-        for (int attempt = 1; attempt <= 3; attempt++) {
-            try {
-                return requestCompletionAttempt(messages);
-            } catch (Exception e) {
+        List<String> models = new ArrayList<>();
+        models.add(selectedModel());
+        try {
+            JSONArray free = fetchFreeModels();
+            for (int i = 0; i < free.length() && models.size() < 4; i++) {
+                String id = free.getJSONObject(i).optString("id", "");
+                if (!id.isEmpty() && !models.contains(id)) models.add(id);
+            }
+        } catch (Exception ignored) { }
+        for (String model : models) {
+            try { return requestCompletionAttempt(messages, model); }
+            catch (Exception e) {
                 last = e;
                 String detail = safeMessage(e).toLowerCase(java.util.Locale.ROOT);
-                boolean transientFailure = e instanceof java.io.IOException ||
-                    detail.contains("connection abort") ||
-                    detail.contains("connection reset") ||
-                    detail.contains("timed out") ||
-                    detail.contains("timeout") ||
-                    detail.contains("unexpected end of stream");
-                if (!transientFailure || attempt == 3) throw e;
-                try { Thread.sleep(1200L * attempt); }
-                catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException("Operazione interrotta durante il nuovo tentativo.", interrupted);
-                }
+                if (detail.contains("free-models-per-day") || detail.contains("free models per day")) throw e;
+                boolean canFallback = detail.contains("rate limit") || detail.contains("too many requests") ||
+                    detail.contains("temporarily unavailable") || detail.contains("no available") ||
+                    detail.contains("provider") || e instanceof java.io.IOException;
+                if (!canFallback) throw e;
             }
         }
-        throw last == null ? new IllegalStateException("Richiesta AI non completata.") : last;
+        throw last == null ? new IllegalStateException("Nessun modello gratuito disponibile.") :
+            new IllegalStateException("Modelli gratuiti non disponibili. Ultimo errore: " + safeMessage(last));
     }
 
-    private String requestCompletionAttempt(JSONArray messages) throws Exception {
+    private String requestCompletionAttempt(JSONArray messages, String model) throws Exception {
         String key = storedKey();
         if (key == null || key.trim().isEmpty()) throw new IllegalStateException("Configura prima la chiave API OpenRouter.");
 
         JSONObject payload = new JSONObject();
-        payload.put("model", MODEL);
+        payload.put("model", model);
         payload.put("messages", messages);
         payload.put("temperature", 0.7);
         payload.put("stream", false);
@@ -470,6 +513,20 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void saveBuiltApk() { requestApkSave(); }
+
+        @JavascriptInterface
+        public String getFreeModels() {
+            try { return fetchFreeModels().toString(); } catch (Exception e) { return "[]"; }
+        }
+
+        @JavascriptInterface
+        public String getSelectedModel() { return selectedModel(); }
+
+        @JavascriptInterface
+        public void setSelectedModel(String model) {
+            if (model != null && model.matches("[A-Za-z0-9._:/-]{3,160}"))
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_MODEL, model).apply();
+        }
 
         @JavascriptInterface
         public String getStatus() {
