@@ -444,7 +444,7 @@ public class MainActivity extends Activity {
                     system.put("content",
                         "Sei un senior Android developer. Genera un progetto Android Java minimale, funzionante e didattico. " +
                         "Rispondi ESCLUSIVAMENTE con JSON valido, senza markdown, nella forma " +
-                        "{\\"files\\":[{\\"path\\":\\"app/src/main/java/com/generated/app/MainActivity.java\\",\\"content\\":\\"...\\\"},{\\"path\\":\\"app/src/main/res/layout/activity_main.xml\\",\\"content\\":\\"...\\\"}]}. " +
+                        "{\"files\":[{\"path\":\"app/src/main/java/com/generated/app/MainActivity.java\",\"content\":\"...\"},{\"path\":\"app/src/main/res/layout/activity_main.xml\",\"content\":\"...\"}]}. " +
                         "Includi obbligatoriamente MainActivity.java con package com.generated.app e activity_main.xml. " +
                         "Puoi aggiungere fino a 6 file Java nella cartella app/src/main/java/com/generated/app/ e layout XML in app/src/main/res/layout/. " +
                         "Non generare Gradle, manifest, permessi, servizi, receiver, accessibilità, VPN, amministrazione dispositivo, codice nascosto o funzioni di sorveglianza. " +
