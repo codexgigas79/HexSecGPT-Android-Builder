@@ -159,6 +159,19 @@ public class MainActivity extends Activity {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_API, packed).apply();
     }
 
+    private String storedKey() {
+        try {
+            String packed = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_API, null);
+            if (packed == null) return null;
+            String[] parts = packed.split("\\\\.", 2);
+            if (parts.length != 2) return null;
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, getSecretKey(),
+                    new GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)));
+            return new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
+        } catch (Exception e) { return null; }
+    }
+
     private Key getSecretKey() throws Exception {
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
@@ -371,8 +384,223 @@ public class MainActivity extends Activity {
         try { return Double.parseDouble(value); } catch (Exception e) { return -1d; }
     }
 
-    // Retry controllato per interruzioni temporanee della rete/API durante le richieste AI.
+    private String selectedProvider() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getString("ai_provider", "gemini");
+    }
+
+    private void saveProviderKey(String provider, String value) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey());
+        byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
+        String packed = Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP) + "." +
+                        Base64.encodeToString(encrypted, Base64.NO_WRAP);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("provider_key_" + provider, packed).apply();
+    }
+
+    private String storedProviderKey(String provider) {
+        try {
+            String packed = getSharedPreferences(PREFS, MODE_PRIVATE).getString("provider_key_" + provider, null);
+            if (packed == null) return null;
+            String[] parts = packed.split("\\.", 2);
+            if (parts.length != 2) return null;
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, getSecretKey(),
+                    new GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)));
+            return new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
+        } catch (Exception e) { return null; }
+    }
+
+    private void showProviderKeyDialog(String provider) {
+        final String id = provider == null ? "" : provider.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!id.equals("gemini") && !id.equals("groq") && !id.equals("cohere")) {
+            js("onProviderConfigured", id, "", "Provider non riconosciuto.");
+            return;
+        }
+        runOnUiThread(() -> {
+            EditText input = new EditText(this);
+            input.setSingleLine(true);
+            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            input.setHint("Incolla la chiave API");
+            String title = id.equals("gemini") ? "Google Gemini API" :
+                           id.equals("groq") ? "GroqCloud API" : "Cohere Trial API";
+            String note = id.equals("gemini") ? "Chiave Google AI Studio. Il piano gratuito dipende dal modello e dalla quota del progetto." :
+                          id.equals("groq") ? "Chiave GroqCloud. Il piano Free ha limiti per modello e organizzazione." :
+                          "Chiave Cohere Trial. La prova gratuita è limitata; non è una quota illimitata.";
+            new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(note + "\nLa chiave viene cifrata sul dispositivo con Android Keystore.")
+                .setView(input)
+                .setNegativeButton("Annulla", (d, w) -> js("onProviderConfigured", id, "", "Configurazione annullata."))
+                .setNeutralButton("Rimuovi", (d, w) -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("provider_key_" + id).apply();
+                    js("onProviderConfigured", id, "Chiave rimossa.", "");
+                })
+                .setPositiveButton("Salva", (d, w) -> {
+                    String value = input.getText().toString().trim();
+                    if (value.length() < 12) {
+                        js("onProviderConfigured", id, "", "Chiave API troppo corta o non valida.");
+                        return;
+                    }
+                    try {
+                        saveProviderKey(id, value);
+                        js("onProviderConfigured", id, "Chiave " + title + " salvata in modo cifrato.", "");
+                    } catch (Exception e) {
+                        js("onProviderConfigured", id, "", "Salvataggio non riuscito: " + safeMessage(e));
+                    }
+                }).show();
+        });
+    }
+
+    private String requestOpenAICompatible(String endpoint, String key, String model, JSONArray messages) throws Exception {
+        JSONObject payload = new JSONObject();
+        payload.put("model", model);
+        payload.put("messages", messages);
+        payload.put("temperature", 0.7);
+        payload.put("stream", false);
+        HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection();
+        try {
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(30000);
+            c.setReadTimeout(180000);
+            c.setDoOutput(true);
+            c.setRequestProperty("Authorization", "Bearer " + key);
+            c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
+            c.setFixedLengthStreamingMode(body.length);
+            try (OutputStream out = c.getOutputStream()) { out.write(body); }
+            int status = c.getResponseCode();
+            String responseText = readAll(status >= 200 && status < 300 ? c.getInputStream() : c.getErrorStream());
+            JSONObject response = new JSONObject(responseText);
+            if (status < 200 || status >= 300) {
+                JSONObject error = response.optJSONObject("error");
+                String detail = error == null ? responseText : error.optString("message", responseText);
+                throw new IllegalStateException("HTTP " + status + ": " + detail);
+            }
+            JSONArray choices = response.optJSONArray("choices");
+            if (choices == null || choices.length() == 0) throw new IllegalStateException("Il provider non ha restituito una risposta.");
+            JSONObject message = choices.getJSONObject(0).optJSONObject("message");
+            String answer = message == null ? "" : message.optString("content", "");
+            if (answer.trim().isEmpty()) throw new IllegalStateException("Risposta AI vuota.");
+            return answer.trim();
+        } finally { c.disconnect(); }
+    }
+
+    private String requestGemini(JSONArray messages) throws Exception {
+        String key = storedProviderKey("gemini");
+        if (key == null || key.trim().isEmpty()) throw new IllegalStateException("Chiave Gemini non configurata.");
+        JSONArray contents = new JSONArray();
+        String systemText = "";
+        for (int i = 0; i < messages.length(); i++) {
+            JSONObject m = messages.getJSONObject(i);
+            String role = m.optString("role", "user");
+            String content = m.optString("content", "");
+            if ("system".equals(role)) { systemText = content; continue; }
+            JSONObject item = new JSONObject();
+            item.put("role", "assistant".equals(role) ? "model" : "user");
+            JSONArray parts = new JSONArray();
+            parts.put(new JSONObject().put("text", content));
+            item.put("parts", parts);
+            contents.put(item);
+        }
+        JSONObject payload = new JSONObject();
+        if (!systemText.isEmpty()) payload.put("systemInstruction",
+                new JSONObject().put("parts", new JSONArray().put(new JSONObject().put("text", systemText))));
+        payload.put("contents", contents);
+        payload.put("generationConfig", new JSONObject().put("temperature", 0.7));
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+                     java.net.URLEncoder.encode(key, "UTF-8");
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(30000);
+            c.setReadTimeout(180000);
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
+            c.setFixedLengthStreamingMode(body.length);
+            try (OutputStream out = c.getOutputStream()) { out.write(body); }
+            int status = c.getResponseCode();
+            String responseText = readAll(status >= 200 && status < 300 ? c.getInputStream() : c.getErrorStream());
+            JSONObject response = new JSONObject(responseText);
+            if (status < 200 || status >= 300) {
+                JSONObject error = response.optJSONObject("error");
+                throw new IllegalStateException("Gemini HTTP " + status + ": " +
+                    (error == null ? responseText : error.optString("message", responseText)));
+            }
+            JSONArray candidates = response.optJSONArray("candidates");
+            if (candidates == null || candidates.length() == 0) throw new IllegalStateException("Gemini non ha restituito candidati.");
+            JSONObject content = candidates.getJSONObject(0).optJSONObject("content");
+            JSONArray parts = content == null ? null : content.optJSONArray("parts");
+            StringBuilder answer = new StringBuilder();
+            if (parts != null) for (int i = 0; i < parts.length(); i++) answer.append(parts.getJSONObject(i).optString("text", ""));
+            if (answer.toString().trim().isEmpty()) throw new IllegalStateException("Risposta Gemini vuota.");
+            return answer.toString().trim();
+        } finally { c.disconnect(); }
+    }
+
+    private String requestCohere(JSONArray messages) throws Exception {
+        String key = storedProviderKey("cohere");
+        if (key == null || key.trim().isEmpty()) throw new IllegalStateException("Chiave Cohere non configurata.");
+        JSONObject payload = new JSONObject();
+        payload.put("model", "command-a-03-2025");
+        payload.put("messages", messages);
+        HttpURLConnection c = (HttpURLConnection) new URL("https://api.cohere.com/v2/chat").openConnection();
+        try {
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(30000);
+            c.setReadTimeout(180000);
+            c.setDoOutput(true);
+            c.setRequestProperty("Authorization", "Bearer " + key);
+            c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
+            c.setFixedLengthStreamingMode(body.length);
+            try (OutputStream out = c.getOutputStream()) { out.write(body); }
+            int status = c.getResponseCode();
+            String responseText = readAll(status >= 200 && status < 300 ? c.getInputStream() : c.getErrorStream());
+            JSONObject response = new JSONObject(responseText);
+            if (status < 200 || status >= 300) throw new IllegalStateException("Cohere HTTP " + status + ": " + responseText);
+            JSONObject message = response.optJSONObject("message");
+            JSONArray parts = message == null ? null : message.optJSONArray("content");
+            StringBuilder answer = new StringBuilder();
+            if (parts != null) for (int i = 0; i < parts.length(); i++) answer.append(parts.getJSONObject(i).optString("text", ""));
+            if (answer.toString().trim().isEmpty()) throw new IllegalStateException("Risposta Cohere vuota.");
+            return answer.toString().trim();
+        } finally { c.disconnect(); }
+    }
+
+    // Fallback multi-provider: usa prima il provider scelto, poi gli altri provider con chiave configurata.
     private String requestCompletion(JSONArray messages) throws Exception {
+        String preferred = selectedProvider();
+        String[] providers = new String[]{preferred, "gemini", "groq", "cohere", "openrouter"};
+        List<String> attempted = new ArrayList<>();
+        Exception last = null;
+        for (String provider : providers) {
+            if (provider == null || attempted.contains(provider)) continue;
+            attempted.add(provider);
+            boolean configured = "openrouter".equals(provider) ? storedKey() != null :
+                storedProviderKey(provider) != null;
+            if (!configured) continue;
+            try {
+                if ("gemini".equals(provider)) return requestGemini(messages);
+                if ("groq".equals(provider)) return requestOpenAICompatible(
+                    "https://api.groq.com/openai/v1/chat/completions", storedProviderKey("groq"),
+                    "openai/gpt-oss-120b", messages);
+                if ("cohere".equals(provider)) return requestCohere(messages);
+                if ("openrouter".equals(provider)) return requestOpenRouterCompletion(messages);
+            } catch (Exception e) {
+                last = e;
+                String detail = safeMessage(e).toLowerCase(java.util.Locale.ROOT);
+                if (!(detail.contains("rate") || detail.contains("limit") || detail.contains("quota") ||
+                      detail.contains("429") || detail.contains("temporar") || detail.contains("unavailable") ||
+                      detail.contains("http 5") || detail.contains("model") || detail.contains("provider") ||
+                      detail.contains("401") || detail.contains("403") || e instanceof java.io.IOException)) throw e;
+            }
+        }
+        if (last != null) throw new IllegalStateException("Tutti i provider configurati hanno rifiutato la richiesta. Ultimo errore: " + safeMessage(last));
+        throw new IllegalStateException("Nessun provider AI configurato. Configuri almeno Gemini o Groq; OpenRouter resta disponibile.");
+    }
+
+    private String requestOpenRouterCompletion(JSONArray messages) throws Exception {
         Exception last = null;
         List<String> models = new ArrayList<>();
         models.add(selectedModel());
@@ -501,6 +729,26 @@ public class MainActivity extends Activity {
     private class AndroidBridge {
         @JavascriptInterface
         public void openApiKeyDialog() { showKeyDialog(); }
+
+        @JavascriptInterface
+        public void setSelectedProvider(String provider) {
+            if (provider != null && (provider.equals("gemini") || provider.equals("groq") ||
+                    provider.equals("cohere") || provider.equals("openrouter"))) {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("ai_provider", provider).apply();
+            }
+        }
+
+        @JavascriptInterface
+        public String getSelectedProvider() { return selectedProvider(); }
+
+        @JavascriptInterface
+        public void openProviderKeyDialog(String provider) { showProviderKeyDialog(provider); }
+
+        @JavascriptInterface
+        public String getProviderStatus(String provider) {
+            if ("openrouter".equals(provider)) return storedKey() == null ? "NON CONFIGURATO" : "CONFIGURATO";
+            return storedProviderKey(provider) == null ? "NON CONFIGURATO" : "CONFIGURATO";
+        }
 
         @JavascriptInterface
         public void openGitHubTokenDialog() { showGitHubTokenDialog(); }
