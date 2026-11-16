@@ -394,9 +394,9 @@ public class MainActivity extends Activity {
                     long started = System.currentTimeMillis();
                     InetAddress[] addresses = InetAddress.getAllByName(target);
                     StringBuilder report = new StringBuilder();
-                    report.append("DIAGNOSTICA TCP — ").append(target).append("\\n");
-                    for (InetAddress address : addresses) report.append("IP: ").append(address.getHostAddress()).append("\\n");
-                    report.append("\\nPORTE TCP\\n");
+                    report.append("DIAGNOSTICA TCP — ").append(target).append("\n");
+                    for (InetAddress address : addresses) report.append("IP: ").append(address.getHostAddress()).append("\n");
+                    report.append("\nPORTE TCP\n");
                     for (int port : ports) {
                         boolean open = false;
                         long elapsed = 0;
@@ -407,10 +407,10 @@ public class MainActivity extends Activity {
                         } catch (Exception ignored) { }
                         elapsed = System.currentTimeMillis() - before;
                         report.append(port).append("/tcp  ").append(open ? "APERTO" : "non raggiungibile/chiuso")
-                              .append("  (").append(elapsed).append(" ms)\\n");
+                              .append("  (").append(elapsed).append(" ms)\n");
                     }
-                    report.append("\\nCompletato in ").append(System.currentTimeMillis() - started).append(" ms.")
-                          .append("\\nNota: un timeout non prova che la porta sia chiusa; firewall e filtri possono bloccare la connessione.");
+                    report.append("\nCompletato in ").append(System.currentTimeMillis() - started).append(" ms.")
+                          .append("\nNota: un timeout non prova che la porta sia chiusa; firewall e filtri possono bloccare la connessione.");
                     js("onNetworkScan", report.toString(), "");
                 } catch (Exception e) {
                     js("onNetworkScan", "", "Diagnostica non riuscita: " + safeMessage(e));
