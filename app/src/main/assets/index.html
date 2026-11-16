@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta name="theme-color" content="#030813">
+<title>HexSecGPT Android</title>
+<style>
+:root{--cyan:#00eaff;--blue:#087cff;--green:#00ffad;--text:#d8faff;--muted:#7097aa}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 8%,#092c48 0%,#030813 55%,#010409 100%);color:var(--text);font-family:Arial,sans-serif}
+header{padding:18px 10px;text-align:center;letter-spacing:5px;color:var(--cyan);font-weight:bold;border-bottom:1px solid #08718b;text-shadow:0 0 15px var(--cyan)}
+main{max-width:850px;margin:auto;padding:12px}.status{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;padding:12px 4px;color:#85b6ca;font-size:10px;letter-spacing:1px}
+.dot{color:var(--green)}.hero{text-align:center}.core{height:205px;display:flex;align-items:center;justify-content:center;position:relative}
+.orb{width:145px;height:145px;border:2px solid var(--cyan);border-radius:50%;box-shadow:0 0 20px #00eaff88,inset 0 0 30px #087cff66;display:grid;place-items:center;position:relative;animation:pulse 3s infinite}
+.orb:before,.orb:after{content:"";position:absolute;border:1px solid #087cff;border-radius:50%;inset:-17px;transform:rotateX(65deg)}.orb:after{inset:-30px;transform:rotateY(65deg)}
+.orb b{font-size:21px;letter-spacing:3px;text-shadow:0 0 14px var(--cyan)}@keyframes pulse{50%{box-shadow:0 0 34px #00eaffaa,inset 0 0 45px #087cff99}}
+.tagline{font-size:9px;letter-spacing:3px;color:var(--muted);margin-bottom:14px}
+.panel{background:linear-gradient(145deg,#0a2035ed,#030c18f5);border:1px solid #08718b;border-radius:13px;padding:14px;margin:12px 0;box-shadow:0 0 22px #00cfff12}
+h3{margin:0 0 12px;color:var(--cyan);font-size:11px;letter-spacing:3px}p.note{font-size:11px;color:var(--muted);line-height:1.5}
+#chat{height:300px;overflow:auto;font-size:13px;line-height:1.55;white-space:pre-wrap}.msg{padding:10px;margin:8px 0;background:#0a1b2a;border-left:2px solid var(--blue);overflow-wrap:anywhere}
+.msg.user{border-color:var(--cyan)}.msg.ai{border-color:var(--green)}.controls{display:flex;gap:8px;margin-top:9px}
+input,textarea{min-width:0;width:100%;background:#020a13;border:1px solid #155a72;border-radius:7px;padding:12px;color:white;font-size:13px;outline:none}
+textarea{min-height:85px;resize:vertical}button{background:linear-gradient(135deg,#075b83,#07314f);border:1px solid var(--cyan);border-radius:7px;color:white;padding:11px 14px;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.45}.secondary{font-size:10px;padding:8px}#script-list{width:100%;background:#020a13;color:white;border:1px solid #155a72;border-radius:7px;padding:10px;margin-top:9px}
+#output{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;font-size:11px;color:#bceaf2;background:#020a13;border:1px solid #155a72;border-radius:7px;padding:10px;margin-top:10px}
+.warning{border-color:#8b6b24;color:#e7d29a}footer{text-align:center;padding:18px;color:#477b90;font-size:9px;letter-spacing:2px}
+@media(max-width:560px){#chat{height:250px}.controls{gap:6px}.controls button{padding:10px}}
+</style></head>
+<body>
+<header>◈ HEXSECGPT ◈</header>
+<div class="status"><span><b class="dot">●</b> ANDROID HUD</span><span id="key-status">CHIAVE: CONTROLLO...</span><span>MODEL: OPENROUTER/FREE</span></div>
+<main>
+<section class="hero"><div class="core"><div class="orb"><b>HEXSEC</b></div></div><div class="tagline">ADVANCED CYBER INTELLIGENCE // ANDROID EDITION</div></section>
+<section class="panel"><h3>◈ CONFIGURAZIONE SICURA</h3><p class="note">Inserisci la tua chiave API OpenRouter. Viene cifrata tramite Android Keystore e non viene salvata nel codice o nei file pubblici.</p><div class="controls"><button style="width:100%" onclick="HexSecGPT.openApiKeyDialog()">CONFIGURA / MODIFICA CHIAVE API</button></div><div id="config-result" class="note"></div></section>
+<section class="panel"><h3>◈ NEURAL INTERFACE</h3><div id="chat"><div class="msg ai">HexSecGPT Android pronto. Configura la chiave API e invia il primo messaggio.</div></div><div class="controls"><input id="message" placeholder="Scrivi un messaggio..." autocomplete="off"><button id="send">INVIA</button></div><div class="controls"><button class="secondary" id="clear">NUOVA CHAT</button><span class="note" id="typing"></span></div></section>
+<section class="panel"><h3>◈ AUTONOMOUS BUILDER</h3><p class="note">Genera script Python con l'AI e salvali nell'area privata dell'app. In questa versione puoi crearli e consultarli; l'esecuzione locale e la verifica sintattica richiedono ancora il runtime Python Android.</p><input id="script-name" placeholder="Nome script (es. NETWATCH)"><textarea id="script-request" placeholder="Descrivi lo script Python da generare..."></textarea><div class="controls"><button id="generate" style="width:100%">GENERA E SALVA SCRIPT</button></div><select id="script-list"><option value="">Script salvati in questa app</option></select><div id="output">Builder pronto.</div></section>
+<section class="panel warning"><h3>◈ SECURITY OPERATIONS</h3><p class="note">Nmap non è ancora incluso nell'APK: richiede un eseguibile Android dedicato e un'integrazione nativa. Nessuna scansione verrà simulata o dichiarata come eseguita.</p><button disabled style="width:100%">NMAP — NON ANCORA DISPONIBILE</button></section>
+</main><footer>HEXSECTEAM // ANDROID CYBER COMMAND CENTER</footer>
+<script>
+const chat=document.getElementById('chat');
+function addMessage(text,who){const node=document.createElement('div');node.className='msg '+who;node.textContent=text;chat.appendChild(node);chat.scrollTop=chat.scrollHeight}
+function refreshStatus(){try{const s=HexSecGPT.getStatus();const el=document.getElementById('key-status');el.textContent='● '+s;el.style.color=s==='CHIAVE CONFIGURATA'?'#00ffad':'#e7d29a'}catch(e){document.getElementById('key-status').textContent='STATO NON DISPONIBILE'}}
+function onKeySaved(message,error){document.getElementById('config-result').textContent=error||message;refreshStatus()}
+function onHexSecReply(answer,error){document.getElementById('send').disabled=false;document.getElementById('typing').textContent='';if(error)addMessage('ERRORE: '+error,'ai');else addMessage(answer,'ai')}
+function send(){const box=document.getElementById('message');const value=box.value.trim();if(!value)return;box.value='';addMessage(value,'user');document.getElementById('send').disabled=true;document.getElementById('typing').textContent='HexSecGPT sta elaborando...';try{HexSecGPT.sendMessage(value)}catch(e){onHexSecReply('',e.message)}}
+document.getElementById('send').onclick=send;document.getElementById('message').addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+document.getElementById('clear').onclick=()=>{HexSecGPT.clearChat();chat.innerHTML='';addMessage('Nuova conversazione avviata.','ai')};
+function refreshScripts(){try{const items=JSON.parse(HexSecGPT.listScripts());const select=document.getElementById('script-list');select.innerHTML='<option value="">Script salvati in questa app</option>';items.forEach(name=>{const option=document.createElement('option');option.value=name;option.textContent=name;select.appendChild(option)})}catch(e){}}
+function onScriptGenerated(name,code,error){document.getElementById('generate').disabled=false;const out=document.getElementById('output');if(error){out.textContent='ERRORE: '+error;return}out.textContent='SCRIPT SALVATO: '+name+'\n\n'+code;refreshScripts()}
+document.getElementById('generate').onclick=()=>{const name=document.getElementById('script-name').value.trim();const request=document.getElementById('script-request').value.trim();if(!name||!request){alert('Inserisci nome e descrizione.');return}document.getElementById('generate').disabled=true;document.getElementById('output').textContent='Generazione in corso...';try{HexSecGPT.generateScript(name,request)}catch(e){onScriptGenerated('','',e.message)}};
+document.getElementById('script-list').onchange=function(){if(!this.value)return;document.getElementById('output').textContent=HexSecGPT.readScript(this.value)};
+window.onKeySaved=onKeySaved;window.onHexSecReply=onHexSecReply;window.onScriptGenerated=onScriptGenerated;refreshStatus();refreshScripts();
+</script></body></html>
