@@ -555,8 +555,40 @@ public class MainActivity extends Activity {
         } finally { c.disconnect(); }
     }
 
-    // Fallback multi-provider: usa prima il provider scelto, poi gli altri provider con chiave configurata.
+    // Riduce il contesto prima dell'invio: conserva istruzioni e richiesta più recente,
+    // eliminando prima i vecchi turni per rispettare le quote TPM dei provider gratuiti.
+    private JSONArray compactMessages(JSONArray source, int maxChars) throws Exception {
+        JSONArray result = new JSONArray();
+        List<JSONObject> items = new ArrayList<>();
+        synchronized (source) {
+            for (int i = 0; i < source.length(); i++)
+                items.add(new JSONObject(source.getJSONObject(i).toString()));
+        }
+        int total = 0;
+        for (JSONObject item : items) total += item.optString("content", "").length();
+        while (total > maxChars && items.size() > 2) {
+            int removeAt = "system".equals(items.get(0).optString("role")) ? 1 : 0;
+            if (removeAt >= items.size() - 1) break;
+            total -= items.remove(removeAt).optString("content", "").length();
+        }
+        if (total > maxChars) {
+            int last = items.size() - 1;
+            JSONObject newest = items.get(last);
+            String content = newest.optString("content", "");
+            int systemChars = items.size() > 1 && "system".equals(items.get(0).optString("role"))
+                ? items.get(0).optString("content", "").length() : 0;
+            int allowance = Math.max(0, maxChars - systemChars);
+            if (content.length() > allowance)
+                throw new IllegalStateException("Richiesta troppo lunga per i provider gratuiti (" +
+                    content.length() + " caratteri). Divida il lavoro in moduli più piccoli.");
+        }
+        for (JSONObject item : items) result.put(item);
+        return result;
+    }
+
+    // Fallback multi-provider con contesto compatto e gestione esplicita degli HTTP 413/TPM.
     private String requestCompletion(JSONArray messages) throws Exception {
+        JSONArray compact = compactMessages(messages, 18000);
         String preferred = selectedProvider();
         String[] providers = new String[]{preferred, "gemini", "groq", "cohere", "openrouter"};
         List<String> attempted = new ArrayList<>();
@@ -568,19 +600,23 @@ public class MainActivity extends Activity {
                 storedProviderKey(provider) != null;
             if (!configured) continue;
             try {
-                if ("gemini".equals(provider)) return requestGemini(messages);
+                if ("gemini".equals(provider)) return requestGemini(compact);
                 if ("groq".equals(provider)) return requestOpenAICompatible(
                     "https://api.groq.com/openai/v1/chat/completions", storedProviderKey("groq"),
-                    "openai/gpt-oss-120b", messages);
-                if ("cohere".equals(provider)) return requestCohere(messages);
-                if ("openrouter".equals(provider)) return requestOpenRouterCompletion(messages);
+                    "openai/gpt-oss-120b", compact);
+                if ("cohere".equals(provider)) return requestCohere(compact);
+                if ("openrouter".equals(provider)) return requestOpenRouterCompletion(compact);
             } catch (Exception e) {
                 last = e;
                 String detail = safeMessage(e).toLowerCase(java.util.Locale.ROOT);
-                if (!(detail.contains("rate") || detail.contains("limit") || detail.contains("quota") ||
-                      detail.contains("429") || detail.contains("temporar") || detail.contains("unavailable") ||
-                      detail.contains("http 5") || detail.contains("model") || detail.contains("provider") ||
-                      detail.contains("401") || detail.contains("403") || e instanceof java.io.IOException)) throw e;
+                boolean retryable = detail.contains("rate") || detail.contains("limit") ||
+                    detail.contains("quota") || detail.contains("429") || detail.contains("413") ||
+                    detail.contains("too large") || detail.contains("tokens per minute") ||
+                    detail.contains("reduce your message size") || detail.contains("temporar") ||
+                    detail.contains("unavailable") || detail.contains("http 5") ||
+                    detail.contains("model") || detail.contains("provider") ||
+                    detail.contains("401") || detail.contains("403") || e instanceof java.io.IOException;
+                if (!retryable) throw e;
             }
         }
         if (last != null) throw new IllegalStateException("Tutti i provider configurati hanno rifiutato la richiesta. Ultimo errore: " + safeMessage(last));
@@ -832,8 +868,18 @@ public class MainActivity extends Activity {
                     messages.put(user);
                     String answer = requestCompletion(messages);
                     Matcher matcher = Pattern.compile("(?is)\\x60\\x60\\x60(?:python|py)?\\s*(.*?)\\x60\\x60\\x60").matcher(answer);
-                    if (!matcher.find()) throw new IllegalStateException("L'AI non ha restituito un blocco Python riconoscibile.");
-                    String code = matcher.group(1).trim();
+                    String code;
+                    if (matcher.find()) {
+                        code = matcher.group(1).trim();
+                    } else {
+                        // Alcuni modelli restituiscono Python puro senza delimitatori Markdown.
+                        code = answer == null ? "" : answer.trim();
+                        code = code.replaceFirst("(?is)^.*?(?=(?:import\\s+|from\\s+|def\\s+|class\\s+|if\\s+__name__|print\\s*\\(|#\\!))", "");
+                        code = code.replaceAll("(?m)^\\s*\\x60\\x60\\x60\\s*$", "").trim();
+                        if (!(code.matches("(?s).*(?:\\bimport\\s+|\\bfrom\\s+|\\bdef\\s+|\\bclass\\s+|print\\s*\\(|if\\s+__name__).*$")))
+                            throw new IllegalStateException("La risposta non contiene codice Python riconoscibile, né un blocco Markdown né istruzioni Python.");
+                    }
+                    if (code.isEmpty()) throw new IllegalStateException("Il codice Python restituito è vuoto.");
                     File directory = new File(getFilesDir(), "generated_scripts");
                     if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("Impossibile creare la cartella degli script.");
                     File output = new File(directory, safeName + ".py");
@@ -872,8 +918,8 @@ public class MainActivity extends Activity {
                     long scriptBytes = source.length();
                     if (scriptBytes < 1)
                         throw new IllegalStateException("Lo script selezionato è vuoto. Lo rigeneri in Autonomous Builder.");
-                    if (scriptBytes > 65536)
-                        throw new IllegalStateException("Lo script è troppo grande (" + scriptBytes + " byte). Il limite di trasferimento è 64 KB. Generi una versione più compatta.");
+                    if (scriptBytes > 16000)
+                        throw new IllegalStateException("Lo script è troppo grande (" + scriptBytes + " byte). Per rispettare i limiti dei provider gratuiti, generi moduli più piccoli (massimo 16 KB per trasferimento).");
                     String python;
                     try (FileInputStream in = new FileInputStream(source)) { python = readAll(in); }
                     if (python == null || python.trim().isEmpty())
