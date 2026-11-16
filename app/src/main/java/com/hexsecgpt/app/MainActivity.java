@@ -541,10 +541,17 @@ public class MainActivity extends Activity {
             executor.execute(() -> {
                 try {
                     File source = new File(new File(getFilesDir(), "generated_scripts"), selected);
-                    if (!source.isFile() || source.length() < 1 || source.length() > 20000)
-                        throw new IllegalStateException("Script non trovato, vuoto o superiore a 20 KB.");
+                    if (!source.isFile())
+                        throw new IllegalStateException("Script non trovato: " + selected + ". Verifichi che sia stato generato e salvato in Autonomous Builder.");
+                    long scriptBytes = source.length();
+                    if (scriptBytes < 1)
+                        throw new IllegalStateException("Lo script selezionato è vuoto. Lo rigeneri in Autonomous Builder.");
+                    if (scriptBytes > 65536)
+                        throw new IllegalStateException("Lo script è troppo grande (" + scriptBytes + " byte). Il limite di trasferimento è 64 KB. Generi una versione più compatta.");
                     String python;
                     try (FileInputStream in = new FileInputStream(source)) { python = readAll(in); }
+                    if (python == null || python.trim().isEmpty())
+                        throw new IllegalStateException("Impossibile leggere il contenuto dello script: file vuoto o non accessibile.");
                     String projectName = selected.substring(0, selected.length() - 3);
                     JSONArray messages = new JSONArray();
                     JSONObject system = new JSONObject();
