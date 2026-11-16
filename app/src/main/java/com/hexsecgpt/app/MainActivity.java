@@ -421,6 +421,40 @@ public class MainActivity extends Activity {
         return messages;
     }
 
+    // Retry strutturato: alcuni modelli gratuiti ignorano la richiesta JSON al primo tentativo.
+    private String createAndroidProjectWithRepair(String projectName, JSONArray originalMessages) throws Exception {
+        String answer = requestCompletion(originalMessages);
+        try {
+            return AppStudio.create(MainActivity.this, projectName, answer);
+        } catch (Exception firstError) {
+            String detail = safeMessage(firstError);
+            String lower = detail.toLowerCase(java.util.Locale.ROOT);
+            if (!(lower.contains("json") || lower.contains("file sorgente") ||
+                  lower.contains("progetto deve contenere") || lower.contains("servono mainactivity"))) {
+                throw firstError;
+            }
+            JSONArray repair = new JSONArray();
+            for (int i = 0; i < originalMessages.length(); i++) {
+                repair.put(new JSONObject(originalMessages.getJSONObject(i).toString()));
+            }
+            JSONObject previous = new JSONObject();
+            previous.put("role", "assistant");
+            previous.put("content", answer);
+            repair.put(previous);
+            JSONObject instruction = new JSONObject();
+            instruction.put("role", "user");
+            instruction.put("content",
+                "La risposta precedente non era un progetto Android JSON valido. Correggila. " +
+                "Restituisci esclusivamente un singolo oggetto JSON valido, senza Markdown, introduzioni o testo esterno. " +
+                "Schema obbligatorio: {\"files\":[{\"path\":\"app/src/main/java/com/generated/app/MainActivity.java\",\"content\":\"CODICE JAVA COMPLETO\"}," +
+                "{\"path\":\"app/src/main/res/layout/activity_main.xml\",\"content\":\"LAYOUT XML COMPLETO\"}]}. " +
+                "Codifica newline e virgolette secondo JSON. Includi entrambi i file obbligatori.");
+            repair.put(instruction);
+            String corrected = requestCompletion(repair);
+            return AppStudio.create(MainActivity.this, projectName, corrected);
+        }
+    }
+
     private class AndroidBridge {
         @JavascriptInterface
         public void openApiKeyDialog() { showKeyDialog(); }
@@ -573,8 +607,7 @@ public class MainActivity extends Activity {
                     user.put("role", "user");
                     user.put("content", "Converti in un'app Android Java la funzionalità di questo script. Nome progetto: " + projectName + "\n\nSCRIPT PYTHON:\n" + python);
                     messages.put(user);
-                    String answer = requestCompletion(messages);
-                    String path = AppStudio.create(MainActivity.this, projectName, answer);
+                    String path = createAndroidProjectWithRepair(projectName, messages);
                     js("onAndroidProjectGenerated", projectName, path, "");
                 } catch (Exception e) {
                     js("onAndroidProjectGenerated", "", "", safeMessage(e));
@@ -676,8 +709,7 @@ public class MainActivity extends Activity {
                     user.put("role", "user");
                     user.put("content", "Nome app: " + safeName + "\nDescrizione: " + description);
                     messages.put(user);
-                    String answer = requestCompletion(messages);
-                    String path = AppStudio.create(MainActivity.this, safeName, answer);
+                    String path = createAndroidProjectWithRepair(safeName, messages);
                     js("onAndroidProjectGenerated", safeName, path, "");
                 } catch (Exception e) {
                     js("onAndroidProjectGenerated", "", "", safeMessage(e));
