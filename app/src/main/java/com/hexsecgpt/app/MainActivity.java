@@ -456,7 +456,7 @@ public class MainActivity extends Activity {
                     user.put("content", "Nome app: " + safeName + "\nDescrizione: " + description);
                     messages.put(user);
                     String answer = requestCompletion(messages);
-                    String path = AppStudio.create(this, safeName, answer);
+                    String path = AppStudio.create(MainActivity.this, safeName, answer);
                     js("onAndroidProjectGenerated", safeName, path, "");
                 } catch (Exception e) {
                     js("onAndroidProjectGenerated", "", "", safeMessage(e));
@@ -468,7 +468,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String listAndroidProjects() {
-            try { return AppStudio.list(this).toString(); }
+            try { return AppStudio.list(MainActivity.this).toString(); }
             catch (Exception e) { return "[]"; }
         }
 
