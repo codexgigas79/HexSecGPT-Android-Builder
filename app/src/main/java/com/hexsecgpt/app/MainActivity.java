@@ -842,6 +842,24 @@ public class MainActivity extends Activity {
             });
         }
 
+        private String extractPythonCode(String answer) {
+            if (answer == null) return "";
+            String text = answer.trim();
+            Matcher fenced = Pattern.compile("(?is)\\x60\\x60\\x60[^\\r\\n]*\\r?\\n(.*?)\\x60\\x60\\x60").matcher(text);
+            if (fenced.find()) {
+                String candidate = fenced.group(1).trim();
+                if (looksLikePython(candidate)) return candidate;
+            }
+            Matcher start = Pattern.compile("(?m)^(?:#!.*|\\s*(?:import\\s+|from\\s+|def\\s+|async\\s+def\\s+|class\\s+|if\\s+__name__|try\\s*:|with\\s+|for\\s+|while\\s+|@|#))").matcher(text);
+            if (start.find()) text = text.substring(start.start()).trim();
+            text = text.replaceAll("(?m)^\\s*\\x60\\x60\\x60\\s*$", "").trim();
+            return looksLikePython(text) ? text : "";
+        }
+
+        private boolean looksLikePython(String code) {
+            if (code == null || code.trim().isEmpty()) return false;
+            return code.matches("(?s).*(?:\\bimport\\s+|\\bfrom\\s+|\\bdef\\s+|\\basync\\s+def\\s+|\\bclass\\s+|\\bif\\s+__name__|\\bprint\\s*\\(|\\btry\\s*:|\\bwith\\s+|\\bfor\\s+\\w+\\s+in\\s+|\\bwhile\\s+|\\breturn\\s+|\\bpass\\b|\\braise\\s+|\\bassert\\s+|\\bargparse\\b|\\bsocket\\b|\\bpathlib\\b).*$");
+        }
         @JavascriptInterface
         public void generateScript(String name, String request) {
             final String safeName = name == null ? "" : name.trim().replaceAll("\\s+", "_");
@@ -860,26 +878,28 @@ public class MainActivity extends Activity {
                     JSONArray messages = new JSONArray();
                     JSONObject system = new JSONObject();
                     system.put("role", "system");
-                    system.put("content", "Sei un programmatore Python. Genera solo script Python 3 per automazioni locali legittime e non distruttive. Non creare malware, furto di credenziali, persistenza, evasione, attacchi o esfiltrazione. Non includere installazioni automatiche o comandi distruttivi. Restituisci un unico blocco di codice Python delimitato da tre backtick.");
+                    system.put("content", "Sei un ingegnere software Python senior. Genera codice completo, non spiegazioni. Restituisci esclusivamente un blocco di codice Python 3 valido, senza testo introduttivo o conclusivo. Includi import, funzioni, gestione errori e main. Solo automazioni locali legittime e verifiche difensive su LAN privata autorizzata; niente brute force, exploit, accessi non autorizzati, malware, persistenza, evasione o esfiltrazione. Nessuna installazione automatica o comando distruttivo.");
                     messages.put(system);
                     JSONObject user = new JSONObject();
                     user.put("role", "user");
                     user.put("content", "Nome: " + safeName + "\nRichiesta: " + description);
                     messages.put(user);
                     String answer = requestCompletion(messages);
-                    Matcher matcher = Pattern.compile("(?is)\\x60\\x60\\x60(?:python|py)?\\s*(.*?)\\x60\\x60\\x60").matcher(answer);
-                    String code;
-                    if (matcher.find()) {
-                        code = matcher.group(1).trim();
-                    } else {
-                        // Alcuni modelli restituiscono Python puro senza delimitatori Markdown.
-                        code = answer == null ? "" : answer.trim();
-                        code = code.replaceFirst("(?is)^.*?(?=(?:import\\s+|from\\s+|def\\s+|class\\s+|if\\s+__name__|print\\s*\\(|#\\!))", "");
-                        code = code.replaceAll("(?m)^\\s*\\x60\\x60\\x60\\s*$", "").trim();
-                        if (!(code.matches("(?s).*(?:\\bimport\\s+|\\bfrom\\s+|\\bdef\\s+|\\bclass\\s+|print\\s*\\(|if\\s+__name__).*$")))
-                            throw new IllegalStateException("La risposta non contiene codice Python riconoscibile, né un blocco Markdown né istruzioni Python.");
+                    String code = extractPythonCode(answer);
+                    if (code.isEmpty()) {
+                        JSONArray retry = new JSONArray();
+                        JSONObject retrySystem = new JSONObject();
+                        retrySystem.put("role", "system");
+                        retrySystem.put("content", "Genera esclusivamente codice Python 3 completo in un blocco Markdown etichettato python. Nessuna spiegazione o JSON. Solo verifiche difensive su LAN privata autorizzata; niente brute force, exploit o accessi non autorizzati.");
+                        retry.put(retrySystem);
+                        JSONObject retryUser = new JSONObject();
+                        retryUser.put("role", "user");
+                        retryUser.put("content", "La risposta precedente non era codice Python. Genera lo script completo richiesto.\nNome: " + safeName + "\nRichiesta: " + description + "\nRisposta precedente da ignorare: " + (answer == null ? "" : answer.substring(0, Math.min(answer.length(), 2000))));
+                        retry.put(retryUser);
+                        answer = requestCompletion(retry);
+                        code = extractPythonCode(answer);
                     }
-                    if (code.isEmpty()) throw new IllegalStateException("Il codice Python restituito è vuoto.");
+                    if (code.isEmpty()) throw new IllegalStateException("Il modello non ha prodotto codice Python neppure dopo il secondo tentativo. Provi un altro provider/modello oppure ripeta la richiesta.");
                     File directory = new File(getFilesDir(), "generated_scripts");
                     if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("Impossibile creare la cartella degli script.");
                     File output = new File(directory, safeName + ".py");
