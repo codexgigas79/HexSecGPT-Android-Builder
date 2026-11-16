@@ -3,7 +3,7 @@ name: HexSecGPT Android APK Builder
 on:
   workflow_dispatch:
   push:
-    branches: [main, source-import]
+    branches: [main, source-import, 'feature/**']
   pull_request:
     branches: [main]
 

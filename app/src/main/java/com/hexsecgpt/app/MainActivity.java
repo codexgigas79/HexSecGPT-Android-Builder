@@ -2,6 +2,8 @@ package com.hexsecgpt.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.text.InputType;
@@ -24,6 +26,9 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.Socket;
+import java.net.InetSocketAddress;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.KeyStore;
@@ -60,6 +65,7 @@ public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final List<JSONObject> history = new ArrayList<>();
     private volatile boolean busy = false;
+    private String pendingProjectExport = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -358,6 +364,136 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void scanTcpPorts(String host, String portsText) {
+            final String target = host == null ? "" : host.trim();
+            final String rawPorts = portsText == null ? "" : portsText.trim();
+            if (!target.matches("[A-Za-z0-9.-]{1,253}") || target.contains("..")) {
+                js("onNetworkScan", "", "Inserisci un hostname o indirizzo IP valido.");
+                return;
+            }
+            String[] requested = rawPorts.split(",");
+            if (requested.length < 1 || requested.length > 64) {
+                js("onNetworkScan", "", "Inserisci da 1 a 64 porte separate da virgola.");
+                return;
+            }
+            final List<Integer> ports = new ArrayList<>();
+            try {
+                for (String item : requested) {
+                    int port = Integer.parseInt(item.trim());
+                    if (port < 1 || port > 65535 || ports.contains(port)) throw new IllegalArgumentException();
+                    ports.add(port);
+                }
+            } catch (Exception e) {
+                js("onNetworkScan", "", "Elenco porte non valido. Usa numeri unici da 1 a 65535.");
+                return;
+            }
+            if (busy) {
+                js("onNetworkScan", "", "Attendere il completamento dell'operazione precedente.");
+                return;
+            }
+            busy = true;
+            executor.execute(() -> {
+                try {
+                    long started = System.currentTimeMillis();
+                    InetAddress[] addresses = InetAddress.getAllByName(target);
+                    StringBuilder report = new StringBuilder();
+                    report.append("DIAGNOSTICA TCP — ").append(target).append("\n");
+                    for (InetAddress address : addresses) report.append("IP: ").append(address.getHostAddress()).append("\n");
+                    report.append("\nPORTE TCP\n");
+                    for (int port : ports) {
+                        boolean open = false;
+                        long elapsed = 0;
+                        long before = System.currentTimeMillis();
+                        try (Socket socket = new Socket()) {
+                            socket.connect(new InetSocketAddress(addresses[0], port), 900);
+                            open = true;
+                        } catch (Exception ignored) { }
+                        elapsed = System.currentTimeMillis() - before;
+                        report.append(port).append("/tcp  ").append(open ? "APERTO" : "non raggiungibile/chiuso")
+                              .append("  (").append(elapsed).append(" ms)\n");
+                    }
+                    report.append("\nCompletato in ").append(System.currentTimeMillis() - started).append(" ms.")
+                          .append("\nNota: un timeout non prova che la porta sia chiusa; firewall e filtri possono bloccare la connessione.");
+                    js("onNetworkScan", report.toString(), "");
+                } catch (Exception e) {
+                    js("onNetworkScan", "", "Diagnostica non riuscita: " + safeMessage(e));
+                } finally {
+                    busy = false;
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void generateAndroidProject(String name, String request) {
+            final String safeName = name == null ? "" : name.trim();
+            final String description = request == null ? "" : request.trim();
+            if (!safeName.matches("[A-Za-z0-9_-]{2,32}") || description.isEmpty() || description.length() > 3000) {
+                js("onAndroidProjectGenerated", "", "", "Nome o descrizione del progetto non validi.");
+                return;
+            }
+            if (busy) {
+                js("onAndroidProjectGenerated", "", "", "Attendere il completamento dell'operazione precedente.");
+                return;
+            }
+            busy = true;
+            executor.execute(() -> {
+                try {
+                    JSONArray messages = new JSONArray();
+                    JSONObject system = new JSONObject();
+                    system.put("role", "system");
+                    system.put("content",
+                        "Sei un senior Android developer. Genera un progetto Android Java minimale, funzionante e didattico. " +
+                        "Rispondi ESCLUSIVAMENTE con JSON valido, senza markdown, nella forma " +
+                        "{\"files\":[{\"path\":\"app/src/main/java/com/generated/app/MainActivity.java\",\"content\":\"...\"},{\"path\":\"app/src/main/res/layout/activity_main.xml\",\"content\":\"...\"}]}. " +
+                        "Includi obbligatoriamente MainActivity.java con package com.generated.app e activity_main.xml. " +
+                        "Puoi aggiungere fino a 6 file Java nella cartella app/src/main/java/com/generated/app/ e layout XML in app/src/main/res/layout/. " +
+                        "Non generare Gradle, manifest, permessi, servizi, receiver, accessibilità, VPN, amministrazione dispositivo, codice nascosto o funzioni di sorveglianza. " +
+                        "Usa solo API Android standard, interfaccia semplice e codice completo. " +
+                        "Nel JSON codifica correttamente newline e virgolette; massimo 8 file e 90 KB complessivi.");
+                    messages.put(system);
+                    JSONObject user = new JSONObject();
+                    user.put("role", "user");
+                    user.put("content", "Nome app: " + safeName + "\nDescrizione: " + description);
+                    messages.put(user);
+                    String answer = requestCompletion(messages);
+                    String path = AppStudio.create(MainActivity.this, safeName, answer);
+                    js("onAndroidProjectGenerated", safeName, path, "");
+                } catch (Exception e) {
+                    js("onAndroidProjectGenerated", "", "", safeMessage(e));
+                } finally {
+                    busy = false;
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public String listAndroidProjects() {
+            try { return AppStudio.list(MainActivity.this).toString(); }
+            catch (Exception e) { return "[]"; }
+        }
+
+        @JavascriptInterface
+        public void exportAndroidProject(String name) {
+            final String safeName = name == null ? "" : name.trim();
+            if (!safeName.matches("[A-Za-z0-9_-]{2,32}")) {
+                js("onProjectExported", "", "Nome progetto non valido.");
+                return;
+            }
+            runOnUiThread(() -> {
+                pendingProjectExport = safeName;
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/zip");
+                intent.putExtra(Intent.EXTRA_TITLE, safeName + ".zip");
+                try { startActivityForResult(intent, 7031); }
+                catch (Exception e) {
+                    pendingProjectExport = null;
+                    js("onProjectExported", "", "Impossibile aprire il selettore file: " + safeMessage(e));
+                }
+            });
+        }
+
+        @JavascriptInterface
         public String listScripts() {
             JSONArray result = new JSONArray();
             File directory = new File(getFilesDir(), "generated_scripts");
@@ -373,6 +509,28 @@ public class MainActivity extends Activity {
             if (!file.isFile()) return "";
             try (FileInputStream in = new FileInputStream(file)) { return readAll(in); }
             catch (Exception e) { return ""; }
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 7031) {
+            final String project = pendingProjectExport;
+            pendingProjectExport = null;
+            if (resultCode == RESULT_OK && data != null && data.getData() != null && project != null) {
+                final Uri destination = data.getData();
+                executor.execute(() -> {
+                    try {
+                        AppStudio.export(this, project, destination);
+                        js("onProjectExported", project + ".zip", "");
+                    } catch (Exception e) {
+                        js("onProjectExported", "", safeMessage(e));
+                    }
+                });
+            } else {
+                js("onProjectExported", "", "Esportazione annullata.");
+            }
         }
     }
 
