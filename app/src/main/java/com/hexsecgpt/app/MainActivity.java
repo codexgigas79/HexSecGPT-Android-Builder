@@ -215,7 +215,7 @@ public class MainActivity extends Activity {
         try {
             String packed = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_GITHUB, null);
             if (packed == null) return null;
-            String[] parts = packed.split("\\\\.", 2);
+            String[] parts = packed.split("\\.", 2);
             if (parts.length != 2) return null;
             byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
             byte[] ciphertext = Base64.decode(parts[1], Base64.NO_WRAP);
