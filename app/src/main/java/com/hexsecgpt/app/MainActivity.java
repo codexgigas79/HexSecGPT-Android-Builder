@@ -527,7 +527,7 @@ public class MainActivity extends Activity {
                         "Sei un senior Android developer esperto nella migrazione da Python ad Android Java. " +
                         "Analizza lo script Python fornito e portane la logica utile in un'app Android Java nativa. " +
                         "NON eseguire né incorporare un interprete Python e NON limitarti a copiare il testo Python. " +
-                        "Rispondi ESCLUSIVAMENTE con JSON valido nella forma {\\"files\\":[{\\"path\\":\\"app/src/main/java/com/generated/app/MainActivity.java\\",\\"content\\":\\"...\\"},{\\"path\\":\\"app/src/main/res/layout/activity_main.xml\\",\\"content\\":\\"...\\"}]}. " +
+                        "Rispondi ESCLUSIVAMENTE con JSON valido nella forma {\"files\":[{\"path\":\"app/src/main/java/com/generated/app/MainActivity.java\",\"content\":\"...\"},{\"path\":\"app/src/main/res/layout/activity_main.xml\",\"content\":\"...\"}]}. " +
                         "Includi MainActivity.java con package com.generated.app e activity_main.xml. " +
                         "Massimo 8 file e 90 KB complessivi; percorsi consentiti solo in app/src/main/java/com/generated/app/ e app/src/main/res/layout/. " +
                         "Usa API Android standard, interfaccia italiana, gestione errori e nessuna funzione simulata. " +
