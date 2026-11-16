@@ -1,0 +1,547 @@
+
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#030813">
+<title>HexSecGPT | Cyber HUD 2.0</title>
+<style>
+:root {
+ --cyan:#00eaff;
+ --blue:#087cff;
+ --green:#00ffad;
+ --bg:#030813;
+ --panel:#071728;
+ --text:#d8faff;
+ --muted:#7097aa;
+}
+*{box-sizing:border-box}
+body{
+ margin:0;min-height:100vh;background:
+ radial-gradient(ellipse at 50% 20%,#092c48 0%,#030813 55%,#010409 100%);
+ color:var(--text);font-family:Arial,sans-serif;
+}
+header{
+ padding:17px 12px;text-align:center;letter-spacing:5px;
+ color:var(--cyan);font-weight:bold;font-size:17px;
+ border-bottom:1px solid #08718b;
+ text-shadow:0 0 15px var(--cyan);
+}
+.status{
+ display:flex;justify-content:center;gap:17px;
+ padding:12px 5px;font-size:10px;color:#85b6ca;flex-wrap:wrap;
+}
+.dot{color:var(--green);text-shadow:0 0 8px var(--green)}
+main{width:100%;max-width:1050px;margin:auto;padding:10px}
+.hero{text-align:center}
+.core-wrap{
+ height:310px;position:relative;display:flex;
+ align-items:center;justify-content:center;
+}
+canvas{width:min(300px,85vw);height:min(300px,85vw)}
+.core-label{
+ position:absolute;text-align:center;pointer-events:none;
+ color:white;font-size:16px;letter-spacing:4px;
+ text-shadow:0 0 15px var(--cyan);
+}
+.core-label small{
+ display:block;font-size:9px;margin-top:9px;
+ color:var(--cyan);letter-spacing:3px;
+}
+.tagline{font-size:10px;letter-spacing:3px;color:var(--muted)}
+.grid{
+ display:grid;grid-template-columns:1.3fr .7fr;
+ gap:12px;margin-top:15px;
+}
+.panel{
+ background:linear-gradient(145deg,#0a2035ed,#030c18f5);
+ border:1px solid #08718b;border-radius:13px;
+ padding:15px;box-shadow:0 0 22px #00cfff12;
+ min-width:0;
+}
+h3{
+ margin:0 0 13px;color:var(--cyan);
+ font-size:11px;letter-spacing:3px;
+}
+#chat{
+ height:300px;overflow:auto;font-size:13px;
+ line-height:1.55;white-space:pre-wrap;
+}
+.msg{
+ padding:10px;margin:8px 0;background:#0a1b2a;
+ border-left:2px solid var(--blue);overflow-wrap:anywhere;
+}
+.msg.user{border-color:var(--cyan);color:#d8faff}
+.msg.ai{border-color:var(--green)}
+.msg{display:flex;flex-direction:column}
+.msg-text{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
+.copy-btn{align-self:flex-end;margin-top:8px;padding:5px 9px;font-size:9px;letter-spacing:1px;cursor:pointer}
+
+.controls{display:flex;gap:8px;margin-top:10px}
+input{
+ min-width:0;width:100%;background:#020a13;
+ border:1px solid #155a72;border-radius:7px;
+ padding:12px;color:white;font-size:13px;outline:none;
+}
+button{
+ background:linear-gradient(135deg,#075b83,#07314f);
+ border:1px solid var(--cyan);border-radius:7px;
+ color:white;padding:11px 15px;font-weight:bold;
+ cursor:pointer;
+}
+button:disabled{opacity:.4}
+button:active{transform:scale(.97)}
+.secondary{font-size:10px;padding:8px}
+#result{
+ white-space:pre-wrap;overflow-wrap:anywhere;
+ max-height:350px;overflow:auto;font-size:11px;
+ color:#bceaf2;line-height:1.5;margin-top:12px;
+}
+.note{font-size:10px;color:var(--muted);line-height:1.5}
+footer{
+ text-align:center;padding:20px;color:#477b90;
+ font-size:9px;letter-spacing:3px;
+}
+@media(max-width:650px){
+ .grid{grid-template-columns:1fr}
+ .core-wrap{height:285px}
+ #chat{height:260px}
+}
+
+textarea,select{
+ width:100%;background:#020a13;color:white;
+ border:1px solid #155a72;border-radius:7px;
+ padding:12px;font-size:13px;margin-top:8px;
+}
+textarea{min-height:100px;resize:vertical}
+.builder-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.builder-actions button{flex:1}
+#builder-output{
+ white-space:pre-wrap;overflow-wrap:anywhere;
+ background:#020a13;border:1px solid #155a72;
+ border-radius:7px;padding:12px;margin-top:12px;
+ min-height:65px;max-height:300px;overflow:auto;
+ font-size:11px;color:#bceaf2;
+}
+
+</style>
+</head>
+<body>
+<header>◈ HEXSECGPT ◈</header>
+
+<div class="status">
+ <span><b class="dot">●</b> HUD ONLINE</span>
+ <span id="connection">● NEURAL LINK...</span>
+ <span id="model">MODEL: CONNECTING</span>
+</div>
+
+<main>
+ <section class="hero">
+  <div class="core-wrap">
+   <canvas id="core" width="600" height="600"></canvas>
+   <div class="core-label">
+    HEXSEC
+    <small id="mode">SYSTEM STANDBY</small>
+   </div>
+  </div>
+  <div class="tagline">ADVANCED CYBER INTELLIGENCE</div>
+ </section>
+
+ <div class="grid">
+  <section class="panel">
+   <h3>◈ NEURAL INTERFACE</h3>
+   <div id="chat">
+    <div class="msg ai">HexSecGPT online. In attesa di istruzioni.</div>
+   </div>
+   <div class="controls">
+    <input id="message" placeholder="Scrivi un messaggio..." autocomplete="off">
+    <button id="send">INVIA</button>
+   </div>
+   <div class="controls">
+    <button class="secondary" id="clear">CANCELLA CHAT</button>
+    <span class="note" id="typing"></span>
+   </div>
+  </section>
+
+  <section class="panel">
+   <h3>◈ SECURITY OPERATIONS</h3>
+   <input id="target" placeholder="IP autorizzato">
+   <div class="controls">
+    <button id="scan" style="width:100%">AVVIA NMAP</button>
+   </div>
+   <div style="margin-top:12px">
+    <label class="note">
+     <input type="checkbox" id="authorized" style="width:auto">
+     Confermo di avere autorizzazione alla scansione.
+    </label>
+   </div>
+   <div id="result">In attesa di un'operazione.</div>
+  </section>
+ </div>
+
+<section class="panel" style="margin-top:12px">
+ <h3>◈ AUTONOMOUS BUILDER</h3>
+ <p class="note">Generazione e gestione di script Python locali.</p>
+ <input id="builder-name" placeholder="Nome programma (es. NETWATCH)">
+ <textarea id="builder-request" placeholder="Descrivi il programma che vuoi creare..."></textarea>
+ <div class="builder-actions">
+  <button id="builder-create">CREA CON AI</button>
+  <button id="builder-refresh" class="secondary">AGGIORNA ELENCO</button>
+ </div>
+ <select id="builder-scripts">
+  <option value="">Seleziona uno script...</option>
+ </select>
+ <div class="note" style="margin-top:12px">COMANDO PER AVVIARE IL PROGRAMMA</div>
+ <div id="builder-command" style="background:#06111f;border:1px solid #00d9ff55;padding:12px;border-radius:9px;overflow-wrap:anywhere">
+  Selezionare uno script...
+ </div>
+ <button id="builder-copy-command" class="secondary" style="margin-top:8px">COPIA COMANDO</button>
+ <div class="builder-actions">
+  <button id="builder-validate">VERIFICA CODICE</button>
+  <button id="builder-run">AVVIA SCRIPT</button>
+ </div>
+ <div class="note" style="margin-top:10px">
+  L'avvio richiede conferma. Gli script vengono eseguiti con i permessi di Termux.
+ </div>
+ <div id="builder-output">Builder pronto. In attesa di istruzioni.</div>
+</section>
+
+</main>
+
+<footer>HEXSECTEAM // CYBER COMMAND CENTER // LOCAL HUD</footer>
+
+<script>
+
+/* ENERGY CORE - LIGHT MODE */
+const canvas=document.getElementById('core');
+const ctx=canvas.getContext('2d');
+let phase=0,activity='idle';
+let lastFrame=0;
+const particles=Array.from({length:25},()=>({
+ a:Math.random()*Math.PI*2,
+ r:110+Math.random()*115,
+ speed:.001+Math.random()*.003,
+ size:1+Math.random()*1.5
+}));
+
+function draw(time){
+ if(time-lastFrame<40){
+  requestAnimationFrame(draw);
+  return;
+ }
+ lastFrame=time;
+
+ const c=300;
+ ctx.clearRect(0,0,600,600);
+ phase+=activity==='busy'?.025:.007;
+ const pulse=1+Math.sin(phase*2)*.035;
+
+ let glow=ctx.createRadialGradient(c,c,10,c,c,210);
+ glow.addColorStop(0,'#00eaff44');
+ glow.addColorStop(.5,'#087bff18');
+ glow.addColorStop(1,'#00102000');
+ ctx.fillStyle=glow;
+ ctx.fillRect(0,0,600,600);
+
+ for(let i=0;i<5;i++){
+  ctx.save();
+  ctx.translate(c,c);
+  ctx.rotate(phase*(i%2?-1:1)*(i+1)*.12);
+  ctx.beginPath();
+  ctx.ellipse(0,0,85+i*20,58+i*14,0,0,Math.PI*2);
+  ctx.strokeStyle=`rgba(0,220,255,${.65-i*.09})`;
+  ctx.lineWidth=i===0?2.5:1;
+  ctx.shadowBlur=8;
+  ctx.shadowColor='#00eaff';
+  ctx.stroke();
+  ctx.restore();
+ }
+
+ particles.forEach(p=>{
+  p.a+=p.speed;
+  let x=c+Math.cos(p.a)*p.r;
+  let y=c+Math.sin(p.a)*p.r;
+  ctx.fillStyle='rgba(70,235,255,.7)';
+  ctx.fillRect(x,y,p.size,p.size);
+ });
+
+ let core=ctx.createRadialGradient(c-23,c-25,5,c,c,75*pulse);
+ core.addColorStop(0,'#ffffff');
+ core.addColorStop(.2,'#a8ffff');
+ core.addColorStop(.5,'#00bfff');
+ core.addColorStop(1,'#063b9c');
+
+ ctx.beginPath();
+ ctx.arc(c,c,68*pulse,0,Math.PI*2);
+ ctx.fillStyle=core;
+ ctx.shadowBlur=activity==='busy'?35:22;
+ ctx.shadowColor='#00dfff';
+ ctx.fill();
+ ctx.shadowBlur=0;
+
+ requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+/* LOCAL CHAT MEMORY */
+const chat=document.getElementById('chat');
+const STORAGE='hexsec_hud_chat_v2';
+
+async function copyMessage(text,button){
+ try{
+  if(navigator.clipboard && window.isSecureContext){
+   await navigator.clipboard.writeText(text);
+  }else{
+   const area=document.createElement('textarea');
+   area.value=text;
+   area.style.position='fixed';
+   area.style.opacity='0';
+   document.body.appendChild(area);
+   area.select();
+   const ok=document.execCommand('copy');
+   area.remove();
+   if(!ok) throw new Error('copy failed');
+  }
+  button.textContent='COPIATO ✓';
+ }catch(e){
+  button.textContent='ERRORE COPIA';
+ }
+ setTimeout(()=>button.textContent='COPIA',1800);
+}
+
+function addCopyButton(element,text){
+ const button=document.createElement('button');
+ button.className='copy-btn';
+ button.type='button';
+ button.textContent='COPIA';
+ button.addEventListener('click',()=>copyMessage(text,button));
+ element.appendChild(button);
+}
+
+function addMessage(text,who,save=true){
+ const d=document.createElement('div');
+ d.className='msg '+who;
+ const content=document.createElement('span');
+ content.className='msg-text';
+ content.textContent=text;
+ d.appendChild(content);
+ addCopyButton(d,text);
+ chat.appendChild(d);
+ chat.scrollTop=chat.scrollHeight;
+ if(save){
+  const history=JSON.parse(localStorage.getItem(STORAGE)||'[]');
+  history.push({text,who});
+  localStorage.setItem(STORAGE,JSON.stringify(history.slice(-100)));
+ }
+}
+function restoreChat(){
+ try{
+  const history=JSON.parse(localStorage.getItem(STORAGE)||'[]');
+  history.forEach(m=>addMessage(m.text,m.who,false));
+ }catch(e){}
+}
+restoreChat();
+chat.querySelectorAll('.msg').forEach(element=>{
+ if(!element.querySelector('.copy-btn')){
+  addCopyButton(element,element.textContent.trim());
+ }
+});
+
+async function post(url,data){
+ const response=await fetch(url,{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify(data)
+ });
+ const result=await response.json();
+ if(!response.ok)throw Error(result.error||'Errore HTTP '+response.status);
+ return result;
+}
+
+async function send(){
+ const box=document.getElementById('message');
+ const message=box.value.trim();
+ if(!message)return;
+ box.value='';
+ addMessage(message,'user');
+ activity='busy';
+ document.getElementById('mode').textContent='PROCESSING';
+ document.getElementById('send').disabled=true;
+ document.getElementById('typing').textContent='HexSecGPT sta elaborando...';
+ try{
+  const result=await post('/api/chat',{message});
+  addMessage(result.answer||'Risposta vuota','ai');
+ }catch(error){
+  addMessage('ERRORE: '+error.message,'ai');
+ }finally{
+  activity='idle';
+  document.getElementById('mode').textContent='SYSTEM STANDBY';
+  document.getElementById('send').disabled=false;
+  document.getElementById('typing').textContent='';
+ }
+}
+document.getElementById('send').onclick=send;
+document.getElementById('message').addEventListener('keydown',e=>{
+ if(e.key==='Enter')send();
+});
+
+document.getElementById('clear').onclick=()=>{
+ if(!confirm('Cancellare la cronologia locale?'))return;
+ localStorage.removeItem(STORAGE);
+ chat.innerHTML='';
+ addMessage('Cronologia locale cancellata.','ai');
+};
+
+/* NMAP */
+document.getElementById('scan').onclick=async()=>{
+ const target=document.getElementById('target').value.trim();
+ const authorized=document.getElementById('authorized').checked;
+ if(!target||!authorized){
+  alert('Inserire IP e confermare l’autorizzazione.');
+  return;
+ }
+ if(!confirm('Avviare Nmap su '+target+'?'))return;
+ const button=document.getElementById('scan');
+ button.disabled=true;
+ activity='busy';
+ document.getElementById('mode').textContent='SCANNING';
+ document.getElementById('result').textContent='Scansione e analisi in corso...';
+ try{
+  const result=await post('/api/nmap',{target,authorized:true});
+  document.getElementById('result').textContent=
+   'RAPPORTO NMAP\n\n'+result.report+
+   '\n\nANALISI AI\n\n'+result.analysis;
+ }catch(error){
+  document.getElementById('result').textContent='ERRORE: '+error.message;
+ }finally{
+  button.disabled=false;
+  activity='idle';
+  document.getElementById('mode').textContent='SYSTEM STANDBY';
+ }
+};
+
+/* CONNECTION */
+fetch('/api/status')
+.then(async response=>{
+ if(!response.ok)throw Error('HTTP '+response.status);
+ return response.json();
+})
+.then(data=>{
+ document.getElementById('connection').textContent='● AI LINK ACTIVE';
+ document.getElementById('model').textContent='MODEL: '+data.model;
+})
+.catch(error=>{
+ document.getElementById('connection').textContent='● AI LINK ERROR';
+ document.getElementById('model').textContent='MODEL: OFFLINE';
+});
+
+/* AUTONOMOUS BUILDER */
+const builderOutput=document.getElementById('builder-output');
+const builderSelect=document.getElementById('builder-scripts');
+
+function builderLog(value){
+ builderOutput.textContent=typeof value==='string'
+  ? value : JSON.stringify(value,null,2);
+}
+
+function updateBuilderCommand(){
+ const name=builderSelect.value;
+ const commandBox=document.getElementById('builder-command');
+ commandBox.textContent=name
+  ? 'cd ~/JARVIS2/CYBER-WATCH/WIFI-AUDITOR/HexSecGPT && python workspace/'+name
+  : 'Selezionare uno script...';
+}
+
+builderSelect.addEventListener('change',updateBuilderCommand);
+
+document.getElementById('builder-copy-command').onclick=async()=>{
+ const name=builderSelect.value;
+ if(!name){alert('Selezionare prima uno script.');return;}
+ const command='cd ~/JARVIS2/CYBER-WATCH/WIFI-AUDITOR/HexSecGPT && python workspace/'+name;
+ try{
+  await navigator.clipboard.writeText(command);
+  alert('Comando copiato.');
+ }catch(error){
+  const area=document.createElement('textarea');
+  area.value=command;
+  document.body.appendChild(area);
+  area.select();
+  const copied=document.execCommand('copy');
+  area.remove();
+  alert(copied?'Comando copiato.':'Impossibile copiare: selezionare il comando manualmente.');
+ }
+};
+
+async function refreshBuilder(){
+ try{
+  const response=await fetch('/api/builder/list',{cache:'no-store'});
+  const data=await response.json();
+  if(!response.ok)throw Error(data.error||'Errore elenco');
+  builderSelect.innerHTML='<option value="">Seleziona uno script...</option>';
+  (data.scripts||[]).forEach(item=>{
+   const option=document.createElement('option');
+   option.value=item.name;
+   option.textContent=item.name+' ('+item.size+' byte)';
+   builderSelect.appendChild(option);
+  });
+  updateBuilderCommand();
+  builderLog('Elenco aggiornato. Script disponibili: '+(data.scripts||[]).length);
+ }catch(error){builderLog('ERRORE: '+error.message);}
+}
+
+document.getElementById('builder-refresh').onclick=refreshBuilder;
+
+document.getElementById('builder-create').onclick=async()=>{
+ const name=document.getElementById('builder-name').value.trim();
+ const request=document.getElementById('builder-request').value.trim();
+ if(!name||!request){
+  alert('Inserire nome e descrizione del programma.');
+  return;
+ }
+ if(!confirm('Chiedere all’AI di generare lo script '+name+'?'))return;
+ const button=document.getElementById('builder-create');
+ button.disabled=true;
+ builderLog('Generazione AI in corso...');
+ try{
+  const result=await post('/api/builder/create',{name,request});
+  builderLog('SCRIPT CREATO: '+result.result.file+
+   '\n\nANTEPRIMA CODICE:\n\n'+result.preview+
+   '\n\nVerificare il codice prima di avviarlo.');
+  await refreshBuilder();
+  builderSelect.value=result.result.file;
+  updateBuilderCommand();
+ }catch(error){builderLog('ERRORE: '+error.message);}
+ finally{button.disabled=false;}
+};
+
+document.getElementById('builder-validate').onclick=async()=>{
+ const name=builderSelect.value;
+ if(!name){alert('Selezionare uno script.');return;}
+ builderLog('Verifica del codice in corso...');
+ try{
+  const result=await post('/api/builder/validate',{name});
+  builderLog(result.valid
+   ? 'CODICE VALIDO ✓\n'+(result.output||'Nessun errore di sintassi.')
+   : 'CODICE NON VALIDO ✗\n'+result.output);
+ }catch(error){builderLog('ERRORE: '+error.message);}
+};
+
+document.getElementById('builder-run').onclick=async()=>{
+ const name=builderSelect.value;
+ if(!name){alert('Selezionare uno script.');return;}
+ if(!confirm('ATTENZIONE: eseguire '+name+' con i permessi di Termux?'))return;
+ builderLog('Esecuzione in corso...');
+ try{
+  const result=await post('/api/builder/run',{name,authorized:true});
+  builderLog('CODICE USCITA: '+result.returncode+
+   '\n\nOUTPUT:\n'+(result.stdout||'(nessun output)')+
+   '\n\nERRORI:\n'+(result.stderr||'(nessuno)'));
+ }catch(error){builderLog('ERRORE: '+error.message);}
+};
+
+refreshBuilder();
+
+</script>
+</body>
+</html>
