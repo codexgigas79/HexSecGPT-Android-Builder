@@ -159,19 +159,6 @@ public class MainActivity extends Activity {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_API, packed).apply();
     }
 
-    private String storedKey() {
-        try {
-            String packed = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_API, null);
-            if (packed == null) return null;
-            String[] parts = packed.split("\\\\.", 2);
-            if (parts.length != 2) return null;
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, getSecretKey(),
-                    new GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)));
-            return new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
-        } catch (Exception e) { return null; }
-    }
-
     private Key getSecretKey() throws Exception {
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
