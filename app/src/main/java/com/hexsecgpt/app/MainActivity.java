@@ -24,6 +24,9 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.Socket;
+import java.net.InetSocketAddress;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.KeyStore;
@@ -351,6 +354,66 @@ public class MainActivity extends Activity {
                     js("onScriptGenerated", output.getName(), code, "");
                 } catch (Exception e) {
                     js("onScriptGenerated", "", "", safeMessage(e));
+                } finally {
+                    busy = false;
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void scanTcpPorts(String host, String portsText) {
+            final String target = host == null ? "" : host.trim();
+            final String rawPorts = portsText == null ? "" : portsText.trim();
+            if (!target.matches("[A-Za-z0-9.-]{1,253}") || target.contains("..")) {
+                js("onNetworkScan", "", "Inserisci un hostname o indirizzo IP valido.");
+                return;
+            }
+            String[] requested = rawPorts.split(",");
+            if (requested.length < 1 || requested.length > 64) {
+                js("onNetworkScan", "", "Inserisci da 1 a 64 porte separate da virgola.");
+                return;
+            }
+            final List<Integer> ports = new ArrayList<>();
+            try {
+                for (String item : requested) {
+                    int port = Integer.parseInt(item.trim());
+                    if (port < 1 || port > 65535 || ports.contains(port)) throw new IllegalArgumentException();
+                    ports.add(port);
+                }
+            } catch (Exception e) {
+                js("onNetworkScan", "", "Elenco porte non valido. Usa numeri unici da 1 a 65535.");
+                return;
+            }
+            if (busy) {
+                js("onNetworkScan", "", "Attendere il completamento dell'operazione precedente.");
+                return;
+            }
+            busy = true;
+            executor.execute(() -> {
+                try {
+                    long started = System.currentTimeMillis();
+                    InetAddress[] addresses = InetAddress.getAllByName(target);
+                    StringBuilder report = new StringBuilder();
+                    report.append("DIAGNOSTICA TCP — ").append(target).append("\\n");
+                    for (InetAddress address : addresses) report.append("IP: ").append(address.getHostAddress()).append("\\n");
+                    report.append("\\nPORTE TCP\\n");
+                    for (int port : ports) {
+                        boolean open = false;
+                        long elapsed = 0;
+                        long before = System.currentTimeMillis();
+                        try (Socket socket = new Socket()) {
+                            socket.connect(new InetSocketAddress(addresses[0], port), 900);
+                            open = true;
+                        } catch (Exception ignored) { }
+                        elapsed = System.currentTimeMillis() - before;
+                        report.append(port).append("/tcp  ").append(open ? "APERTO" : "non raggiungibile/chiuso")
+                              .append("  (").append(elapsed).append(" ms)\\n");
+                    }
+                    report.append("\\nCompletato in ").append(System.currentTimeMillis() - started).append(" ms.")
+                          .append("\\nNota: un timeout non prova che la porta sia chiusa; firewall e filtri possono bloccare la connessione.");
+                    js("onNetworkScan", report.toString(), "");
+                } catch (Exception e) {
+                    js("onNetworkScan", "", "Diagnostica non riuscita: " + safeMessage(e));
                 } finally {
                     busy = false;
                 }
