@@ -442,7 +442,9 @@ public class MainActivity extends Activity {
         JSONObject payload = new JSONObject();
         payload.put("model", model);
         payload.put("messages", messages);
-        payload.put("temperature", 0.7);
+        payload.put("temperature", 0.3);
+        payload.put("max_completion_tokens", 3000);
+        payload.put("reasoning_effort", "low");
         payload.put("stream", false);
         HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection();
         try {
@@ -586,6 +588,40 @@ public class MainActivity extends Activity {
         return result;
     }
 
+    // Fallback Groq: prova modelli alternativi se un modello raggiunge il limite TPM
+    // o non è disponibile per il piano/organizzazione dell'utente.
+    private String requestGroqCompletion(JSONArray messages) throws Exception {
+        String key = storedProviderKey("groq");
+        if (key == null || key.trim().isEmpty())
+            throw new IllegalStateException("Chiave Groq non configurata.");
+        String[] models = new String[]{
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b"
+        };
+        Exception last = null;
+        for (String model : models) {
+            try {
+                return requestOpenAICompatible(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    key, model, messages);
+            } catch (Exception e) {
+                last = e;
+                String detail = safeMessage(e).toLowerCase(java.util.Locale.ROOT);
+                boolean canFallback = detail.contains("429") ||
+                    detail.contains("rate") || detail.contains("limit") ||
+                    detail.contains("quota") || detail.contains("tokens per minute") ||
+                    detail.contains("model") || detail.contains("not found") ||
+                    detail.contains("unavailable") || detail.contains("temporar") ||
+                    detail.contains("http 5") || e instanceof java.io.IOException;
+                if (!canFallback) throw e;
+            }
+        }
+        throw last == null
+            ? new IllegalStateException("Nessun modello Groq disponibile.")
+            : new IllegalStateException("Tutti i modelli Groq hanno rifiutato la richiesta. Ultimo errore: " + safeMessage(last));
+    }
+
     // Fallback multi-provider con contesto compatto e gestione esplicita degli HTTP 413/TPM.
     private String requestCompletion(JSONArray messages) throws Exception {
         JSONArray compact = compactMessages(messages, 18000);
@@ -601,9 +637,7 @@ public class MainActivity extends Activity {
             if (!configured) continue;
             try {
                 if ("gemini".equals(provider)) return requestGemini(compact);
-                if ("groq".equals(provider)) return requestOpenAICompatible(
-                    "https://api.groq.com/openai/v1/chat/completions", storedProviderKey("groq"),
-                    "openai/gpt-oss-120b", compact);
+                if ("groq".equals(provider)) return requestGroqCompletion(compact);
                 if ("cohere".equals(provider)) return requestCohere(compact);
                 if ("openrouter".equals(provider)) return requestOpenRouterCompletion(compact);
             } catch (Exception e) {
