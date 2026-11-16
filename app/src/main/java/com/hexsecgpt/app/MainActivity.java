@@ -538,7 +538,7 @@ public class MainActivity extends Activity {
                     messages.put(system);
                     JSONObject user = new JSONObject();
                     user.put("role", "user");
-                    user.put("content", "Converti in un'app Android Java la funzionalità di questo script. Nome progetto: " + projectName + "\\n\\nSCRIPT PYTHON:\\n" + python);
+                    user.put("content", "Converti in un'app Android Java la funzionalità di questo script. Nome progetto: " + projectName + "\n\nSCRIPT PYTHON:\n" + python);
                     messages.put(user);
                     String answer = requestCompletion(messages);
                     String path = AppStudio.create(MainActivity.this, projectName, answer);
