@@ -55,9 +55,12 @@ final class RemoteBuildManager {
         JSONObject dispatch = new JSONObject();
         dispatch.put("event_type", "build-android");
         dispatch.put("client_payload", clientPayload);
+        String dispatchBody = dispatch.toString();
+        if (dispatchBody.getBytes(StandardCharsets.UTF_8).length > 60000)
+            throw new IllegalStateException("Il progetto è troppo grande per il limite dell'evento GitHub. Riduca i sorgenti a meno di 60 KB e riprovi.");
 
         long startedAt = System.currentTimeMillis();
-        apiJson("POST", API + "/dispatches", token, dispatch.toString());
+        apiJson("POST", API + "/dispatches", token, dispatchBody);
         JSONObject run = waitForRun(token, startedAt);
         long runId = run.optLong("id", 0);
         String runUrl = run.optString("html_url", "https://github.com/" + OWNER + "/" + REPO + "/actions");
