@@ -330,7 +330,33 @@ public class MainActivity extends Activity {
         }
     }
 
+    // Retry controllato per interruzioni temporanee della rete/API durante le richieste AI.
     private String requestCompletion(JSONArray messages) throws Exception {
+        Exception last = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                return requestCompletionAttempt(messages);
+            } catch (Exception e) {
+                last = e;
+                String detail = safeMessage(e).toLowerCase(java.util.Locale.ROOT);
+                boolean transientFailure = e instanceof java.io.IOException ||
+                    detail.contains("connection abort") ||
+                    detail.contains("connection reset") ||
+                    detail.contains("timed out") ||
+                    detail.contains("timeout") ||
+                    detail.contains("unexpected end of stream");
+                if (!transientFailure || attempt == 3) throw e;
+                try { Thread.sleep(1200L * attempt); }
+                catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Operazione interrotta durante il nuovo tentativo.", interrupted);
+                }
+            }
+        }
+        throw last == null ? new IllegalStateException("Richiesta AI non completata.") : last;
+    }
+
+    private String requestCompletionAttempt(JSONArray messages) throws Exception {
         String key = storedKey();
         if (key == null || key.trim().isEmpty()) throw new IllegalStateException("Configura prima la chiave API OpenRouter.");
 
@@ -343,8 +369,8 @@ public class MainActivity extends Activity {
         HttpURLConnection connection = (HttpURLConnection) new URL(API_URL).openConnection();
         try {
             connection.setRequestMethod("POST");
-            connection.setConnectTimeout(20000);
-            connection.setReadTimeout(90000);
+            connection.setConnectTimeout(30000);
+            connection.setReadTimeout(180000);
             connection.setDoOutput(true);
             connection.setRequestProperty("Authorization", "Bearer " + key);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
