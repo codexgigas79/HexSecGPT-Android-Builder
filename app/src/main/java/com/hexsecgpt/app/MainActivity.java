@@ -798,7 +798,7 @@ public class MainActivity extends Activity {
                 "Restituisci esclusivamente JSON valido, senza Markdown. Includi esattamente questi due file: " +
                 "MainActivity.java in app/src/main/java/com/generated/app/ e activity_main.xml in app/src/main/res/layout/. " +
                 "Usa codice Java breve ma completo, senza commenti prolissi né funzioni non richieste. " +
-                "Codifica ogni newline come \\n e ogni virgolette interna come \\". " +
+                "Rispetta rigorosamente la sintassi JSON: escape correttamente newline e virgolette nei contenuti. " +
                 "Non interrompere il JSON e chiudi tutte le parentesi e stringhe.");
             repair.put(instruction);
             String corrected = requestCompletion(repair);
