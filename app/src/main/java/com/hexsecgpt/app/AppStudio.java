@@ -58,10 +58,12 @@ final class AppStudio {
                 "rootProject.name = \"" + name + "\"\ninclude ':app'\n");
             write(new File(base, "build.gradle"),
                 "plugins { id 'com.android.application' version '8.7.3' apply false }\n");
+            String appIdSuffix = name.replaceAll("[^a-z0-9_]", "_");
+            String applicationId = "com.hexsecgpt.generated." + appIdSuffix;
             write(new File(base, "app/build.gradle"),
                 "plugins { id 'com.android.application' }\n\nandroid {\n" +
                 "    namespace 'com.generated.app'\n    compileSdk 35\n" +
-                "    defaultConfig { applicationId 'com.generated.app'; minSdk 23; targetSdk 35; versionCode 1; versionName '1.0' }\n}\n");
+                "    defaultConfig { applicationId '" + applicationId + "'; minSdk 23; targetSdk 35; versionCode 1; versionName '1.0' }\n}\n");
             write(new File(base, "app/src/main/AndroidManifest.xml"),
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
                 "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n" +
@@ -121,7 +123,8 @@ final class AppStudio {
     private static boolean safeSourcePath(String path) {
         if (path.contains("..") || path.startsWith("/") || path.contains("\\\\") || path.contains(":")) return false;
         if (!path.matches("app/src/main/java/com/generated/app/[A-Za-z0-9_]+\\.java") &&
-            !path.matches("app/src/main/res/layout/[a-z0-9_]+\\.xml")) return false;
+            !path.matches("app/src/main/res/layout/[a-z0-9_]+\\.xml") &&
+            !path.matches("app/src/main/res/values/[a-z0-9_]+\\.xml")) return false;
         return true;
     }
 
