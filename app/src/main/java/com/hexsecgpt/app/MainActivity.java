@@ -464,7 +464,7 @@ public class MainActivity extends Activity {
         payload.put("model", model);
         payload.put("messages", messages);
         payload.put("temperature", 0.3);
-        payload.put("max_completion_tokens", 3000);
+        payload.put("max_completion_tokens", 6000);
         payload.put("reasoning_effort", "low");
         payload.put("stream", false);
         HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection();
@@ -516,7 +516,7 @@ public class MainActivity extends Activity {
         if (!systemText.isEmpty()) payload.put("systemInstruction",
                 new JSONObject().put("parts", new JSONArray().put(new JSONObject().put("text", systemText))));
         payload.put("contents", contents);
-        payload.put("generationConfig", new JSONObject().put("temperature", 0.7));
+        payload.put("generationConfig", new JSONObject().put("temperature", 0.7).put("maxOutputTokens", 8192));
         String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
                      java.net.URLEncoder.encode(key, "UTF-8");
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
@@ -554,6 +554,7 @@ public class MainActivity extends Activity {
         JSONObject payload = new JSONObject();
         payload.put("model", "command-a-03-2025");
         payload.put("messages", messages);
+        payload.put("max_tokens", 6000);
         HttpURLConnection c = (HttpURLConnection) new URL("https://api.cohere.com/v2/chat").openConnection();
         try {
             c.setRequestMethod("POST");
@@ -713,6 +714,7 @@ public class MainActivity extends Activity {
         payload.put("model", model);
         payload.put("messages", messages);
         payload.put("temperature", 0.7);
+        payload.put("max_tokens", 6000);
         payload.put("stream", false);
 
         HttpURLConnection connection = (HttpURLConnection) new URL(API_URL).openConnection();
@@ -778,26 +780,26 @@ public class MainActivity extends Activity {
         } catch (Exception firstError) {
             String detail = safeMessage(firstError);
             String lower = detail.toLowerCase(java.util.Locale.ROOT);
-            if (!(lower.contains("json") || lower.contains("file sorgente") ||
-                  lower.contains("progetto deve contenere") || lower.contains("servono mainactivity"))) {
-                throw firstError;
-            }
+            boolean repairable = lower.contains("json") || lower.contains("file sorgente") ||
+                lower.contains("progetto deve contenere") || lower.contains("servono mainactivity") ||
+                lower.contains("unterminated string") || lower.contains("unexpected end") ||
+                lower.contains("end of input") || lower.contains("character");
+            if (!repairable) throw firstError;
+
+            // Non reinviare al modello l'intera risposta troncata: consumerebbe altri token.
             JSONArray repair = new JSONArray();
             for (int i = 0; i < originalMessages.length(); i++) {
                 repair.put(new JSONObject(originalMessages.getJSONObject(i).toString()));
             }
-            JSONObject previous = new JSONObject();
-            previous.put("role", "assistant");
-            previous.put("content", answer);
-            repair.put(previous);
             JSONObject instruction = new JSONObject();
             instruction.put("role", "user");
             instruction.put("content",
-                "La risposta precedente non era un progetto Android JSON valido. Correggila. " +
-                "Restituisci esclusivamente un singolo oggetto JSON valido, senza Markdown, introduzioni o testo esterno. " +
-                "Schema obbligatorio: {\"files\":[{\"path\":\"app/src/main/java/com/generated/app/MainActivity.java\",\"content\":\"CODICE JAVA COMPLETO\"}," +
-                "{\"path\":\"app/src/main/res/layout/activity_main.xml\",\"content\":\"LAYOUT XML COMPLETO\"}]}. " +
-                "Codifica newline e virgolette secondo JSON. Includi entrambi i file obbligatori.");
+                "La generazione precedente era incompleta o non era JSON valido. Rigenera da zero in modo PIU' COMPATTO. " +
+                "Restituisci esclusivamente JSON valido, senza Markdown. Includi esattamente questi due file: " +
+                "MainActivity.java in app/src/main/java/com/generated/app/ e activity_main.xml in app/src/main/res/layout/. " +
+                "Usa codice Java breve ma completo, senza commenti prolissi né funzioni non richieste. " +
+                "Codifica ogni newline come \\n e ogni virgolette interna come \\". " +
+                "Non interrompere il JSON e chiudi tutte le parentesi e stringhe.");
             repair.put(instruction);
             String corrected = requestCompletion(repair);
             return AppStudio.create(MainActivity.this, projectName, corrected);
